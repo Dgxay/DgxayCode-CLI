@@ -15,24 +15,24 @@ const { listModels } = require('../core/llm');
 
 const PERMISSIONS = {
   none: {
-    label: '无权限',
-    short: '只读',
-    desc: '仅可只读访问工作空间文件，禁止联网与修改文件'
+    label: 'No permission',
+    short: 'read-only',
+    desc: 'Read-only access inside the workspace'
   },
   normal: {
-    label: '普通权限',
-    short: '普通',
-    desc: '拥有全部能力，但每次操作都需要你确认'
+    label: 'Normal',
+    short: 'normal',
+    desc: 'All capabilities, but every operation asks you'
   },
   auto: {
-    label: '自动审查',
-    short: '审查',
-    desc: '拥有全部能力，先由审查模型判断，可疑操作再询问你'
+    label: 'Auto review',
+    short: 'auto',
+    desc: 'All capabilities; a reviewer model decides, suspicious ones ask you'
   },
   full: {
-    label: '完全权限',
-    short: '完全',
-    desc: '可执行终端命令、访问任意文件、无限制联网'
+    label: 'Full access',
+    short: 'full',
+    desc: 'Run commands, touch any file, unrestricted network'
   }
 };
 
@@ -42,21 +42,21 @@ const PROTOCOL_META = {
     full: 'OpenAI ChatCompletions',
     path: '/v1/chat/completions',
     basePlaceholder: 'https://api.openai.com/v1',
-    modelPlaceholder: '如 gpt-4o、deepseek-chat'
+    modelPlaceholder: 'e.g. gpt-4o, deepseek-chat'
   },
   anthropic: {
     short: 'Messages',
     full: 'Anthropic Messages',
     path: '/v1/messages',
     basePlaceholder: 'https://api.anthropic.com',
-    modelPlaceholder: '如 claude-sonnet-4-5'
+    modelPlaceholder: 'e.g. claude-sonnet-4-5'
   },
   responses: {
     short: 'Responses',
     full: 'OpenAI Responses API',
     path: '/v1/responses',
     basePlaceholder: 'https://api.openai.com/v1',
-    modelPlaceholder: '如 gpt-5、o4-mini'
+    modelPlaceholder: 'e.g. gpt-5, o4-mini'
   }
 };
 
@@ -137,28 +137,28 @@ function upsertProvider(input = {}) {
   const config = readConfig();
   const list = config.providers || [];
   const existing = input.ref ? findProvider(input.ref) : null;
-  if (input.ref && !existing) throw new Error(`找不到供应商：${input.ref}`);
+  if (input.ref && !existing) throw new Error(`Provider not found: ${input.ref}`);
 
   const protocol = PROTOCOLS.includes(input.protocol) ? input.protocol : existing?.protocol || 'openai';
   const baseUrl = String(input.baseUrl || existing?.baseUrl || '').trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Base URL 必须以 http:// 或 https:// 开头');
+  if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Base URL must start with http:// or https://');
 
   const models = normalizeModels(input.models, existing?.models);
-  if (!models.length) throw new Error('请至少提供一个模型 ID（--model）');
+  if (!models.length) throw new Error('Provide at least one model id (--model)');
 
   const authMode = input.authMode === 'oauth' ? 'oauth' : 'apiKey';
   const oauthProvider = authMode === 'oauth' ? String(input.oauthProvider || '').trim() : '';
   if (authMode === 'oauth') {
-    if (!oauthProvider) throw new Error('使用 OAuth 账户时必须指定 --oauth-provider（openai/anthropic/xai/google）');
+    if (!oauthProvider) throw new Error('Pass --oauth-provider (openai/anthropic/xai/google) to use an OAuth account');
     const account = oauth.listProviders().find((item) => item.id === oauthProvider);
     if (!account?.connection || account.connection.expired) {
-      throw new Error(`${oauthProvider} 账户尚未连接或登录已过期，请先运行 dgxay oauth connect ${oauthProvider}`);
+      throw new Error(`${oauthProvider} is not connected or the login expired. Run dgxay oauth connect ${oauthProvider}`);
     }
   }
 
   const record = {
     id: existing?.id || newId('prov'),
-    name: String(input.name || existing?.name || '我的供应商').trim(),
+    name: String(input.name || existing?.name || 'My provider').trim(),
     protocol,
     baseUrl,
     apiKey: input.apiKey !== undefined ? String(input.apiKey) : existing?.apiKey || '',
@@ -205,7 +205,7 @@ function normalizeModels(input, fallback = []) {
 function removeProvider(ref) {
   const config = readConfig();
   const target = findProvider(ref);
-  if (!target) throw new Error(`找不到供应商：${ref}`);
+  if (!target) throw new Error(`Provider not found: ${ref}`);
   const next = (config.providers || []).filter((p) => p.id !== target.id);
   const patch = { providers: next };
   if (config.activeProviderId === target.id) {
@@ -219,7 +219,7 @@ function moveProvider(ref, direction) {
   const config = readConfig();
   const list = (config.providers || []).slice();
   const target = findProvider(ref);
-  if (!target) throw new Error(`找不到供应商：${ref}`);
+  if (!target) throw new Error(`Provider not found: ${ref}`);
   const index = list.findIndex((p) => p.id === target.id);
   const nextIndex = direction < 0 ? index - 1 : index + 1;
   if (nextIndex < 0 || nextIndex >= list.length) return config;
@@ -231,15 +231,15 @@ function moveProvider(ref, direction) {
 function setActiveModel(providerRef, modelRef) {
   const config = readConfig();
   const provider = providerRef ? findProvider(providerRef) : activeProvider(config);
-  if (!provider) throw new Error('没有可用的供应商');
+  if (!provider) throw new Error('No provider available');
   const models = provider.models || [];
   const model = models.find((m) => m.id === modelRef) || models.find((m) => m.id.includes(String(modelRef)));
-  if (!model) throw new Error(`供应商 ${provider.name} 下没有模型 ${modelRef}`);
+  if (!model) throw new Error(`Provider ${provider.name} has no model ${modelRef}`);
   return saveConfig({ activeProviderId: provider.id, activeModelId: model.id });
 }
 
 function setPermission(permission) {
-  if (!PERMISSIONS[permission]) throw new Error(`未知权限：${permission}`);
+  if (!PERMISSIONS[permission]) throw new Error(`Unknown permission: ${permission}`);
   return saveConfig({ ui: { permission } });
 }
 
@@ -256,7 +256,7 @@ function setWorkspace(dir) {
   const target = dir ? path.resolve(dir) : '';
   if (target) {
     const stat = fs.statSync(target);
-    if (!stat.isDirectory()) throw new Error(`${target} 不是文件夹`);
+    if (!stat.isDirectory()) throw new Error(`${target} is not a directory`);
   }
   const recents = (config.work?.recentWorkspaces || []).filter((item) => item !== target);
   if (target) recents.unshift(target);
@@ -274,7 +274,7 @@ async function fetchModels({ providerRef, baseUrl, apiKey, protocol }) {
   const provider = providerRef ? findProvider(providerRef) : activeProvider(config);
   const targetBaseUrl = baseUrl || provider?.baseUrl;
   const targetProtocol = protocol || provider?.protocol || 'openai';
-  if (!targetBaseUrl) throw new Error('缺少 Base URL');
+  if (!targetBaseUrl) throw new Error('Missing Base URL');
   let token = apiKey ?? provider?.apiKey ?? '';
   let authType = 'apiKey';
   if (provider && provider.authMode === 'oauth' && provider.oauthProvider && apiKey === undefined) {

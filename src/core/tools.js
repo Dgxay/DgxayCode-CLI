@@ -185,7 +185,7 @@ function sameOrInside(root, target) {
 
 function resolveTarget(input, workspace) {
   const raw = String(input || '').trim();
-  if (!raw) throw new Error('缺少路径参数');
+  if (!raw) throw new Error('Missing path argument');
   const base = workspace || os.homedir();
   return path.normalize(path.isAbsolute(raw) ? raw : path.resolve(base, raw));
 }
@@ -200,19 +200,19 @@ function displayPath(abs, workspace) {
 
 function assertReadable(target, ctx) {
   if (ctx.permission === 'none') {
-    if (!ctx.workspace) throw new Error('当前为无权限模式且未选择工作空间，无法读取文件');
+    if (!ctx.workspace) throw new Error('No workspace selected in read-only mode: cannot read files');
     if (!sameOrInside(ctx.workspace, target)) {
-      throw new Error('无权限模式仅允许读取工作空间内的文件');
+      throw new Error('Read-only mode only allows files inside the workspace');
     }
   }
 }
 
 function assertWritable(target, ctx) {
-  if (ctx.permission === 'none') throw new Error('当前为无权限模式，禁止修改文件');
+  if (ctx.permission === 'none') throw new Error('Read-only mode forbids modifying files');
   const roots = [path.parse(target).root, os.homedir(), ctx.workspace || ''].filter(Boolean);
   for (const root of roots) {
     if (path.normalize(target).toLowerCase() === path.normalize(root).toLowerCase()) {
-      throw new Error('拒绝对根目录执行删除或写入操作');
+      throw new Error('Refusing to write to or delete a root directory');
     }
   }
 }
@@ -223,7 +223,7 @@ async function walkTree(dir, depth, prefix, acc, limit) {
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch (err) {
-    acc.push(`${prefix}[无法读取: ${err.code || err.message}]`);
+    acc.push(`${prefix}[cannot read: ${err.code || err.message}]`);
     return;
   }
   entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
@@ -232,7 +232,7 @@ async function walkTree(dir, depth, prefix, acc, limit) {
     .slice(0, 80);
   for (const entry of visible) {
     if (acc.length >= limit) {
-      acc.push(`${prefix}... (已截断)`);
+      acc.push(`${prefix}... (truncated)`);
       return;
     }
     const full = path.join(dir, entry.name);
@@ -255,23 +255,23 @@ async function walkTree(dir, depth, prefix, acc, limit) {
 
 function truncate(text, limit) {
   if (text.length <= limit) return text;
-  return `${text.slice(0, limit)}\n\n... (输出已截断，共 ${text.length} 字符)`;
+  return `${text.slice(0, limit)}\n\n... (output truncated, ${text.length} chars total)`;
 }
 
 async function execute(name, args, ctx) {
   const permission = ctx.permission || 'none';
   const allowed = PERMISSION_TOOLS[permission] || [];
   if (!allowed.includes(name)) {
-    throw new Error(`当前权限模式（${permission}）不允许调用工具 ${name}`);
+    throw new Error(`Permission level (${permission}) does not allow tool ${name}`);
   }
   const workspace = ctx.workspace || '';
 
   if (permission === 'normal' || permission === 'auto') {
     if (typeof ctx.requestApproval !== 'function') {
-      throw new Error('当前权限缺少授权回调，已阻止该操作');
+      throw new Error('Missing approval callback for this permission level — blocked');
     }
     const ok = await ctx.requestApproval({ name, args });
-    if (!ok) throw new Error('用户拒绝了该操作，请勿重试');
+    if (!ok) throw new Error('The user declined this operation — do not retry');
   }
 
   switch (name) {
@@ -279,7 +279,7 @@ async function execute(name, args, ctx) {
       const target = resolveTarget(args.path || '.', workspace);
       assertReadable(target, ctx);
       const stat = await fsp.stat(target);
-      if (!stat.isDirectory()) throw new Error(`${displayPath(target, workspace)} 不是文件夹`);
+      if (!stat.isDirectory()) throw new Error(`${displayPath(target, workspace)} is not a directory`);
       const acc = [`${displayPath(target, workspace)}/`];
       await walkTree(target, Math.min(Math.max(Number(args.depth) || 1, 1), 3), '  ', acc, 200);
       return acc.join('\n');
@@ -288,10 +288,10 @@ async function execute(name, args, ctx) {
       const target = resolveTarget(args.path, workspace);
       assertReadable(target, ctx);
       const stat = await fsp.stat(target);
-      if (stat.isDirectory()) throw new Error('该路径是文件夹，请使用 list_directory');
-      if (stat.size > 2 * 1024 * 1024) throw new Error('文件过大（>2MB），请使用终端命令处理');
+      if (stat.isDirectory()) throw new Error('That path is a directory — use list_directory');
+      if (stat.size > 2 * 1024 * 1024) throw new Error('File too large (>2MB) — use a shell command instead');
       const content = await fsp.readFile(target, 'utf8');
-      return `文件：${displayPath(target, workspace)}\n\n${truncate(content, MAX_READ)}`;
+      return `File: ${displayPath(target, workspace)}\n\n${truncate(content, MAX_READ)}`;
     }
     case 'write_file': {
       const target = resolveTarget(args.path, workspace);
@@ -308,13 +308,13 @@ async function execute(name, args, ctx) {
       await fsp.writeFile(target, content, 'utf8');
       const bytes = Buffer.byteLength(content, 'utf8');
       ctx.onFile?.({ action, path: target, display: displayPath(target, workspace), bytes });
-      return `已${action === 'created' ? '创建' : '更新'}文件 ${displayPath(target, workspace)}（${bytes} 字节）`;
+      return `${action === 'created' ? 'Created' : 'Updated'} ${displayPath(target, workspace)} (${bytes} bytes)`;
     }
     case 'create_directory': {
       const target = resolveTarget(args.path, workspace);
       assertWritable(target, ctx);
       await fsp.mkdir(target, { recursive: true });
-      return `已创建文件夹 ${displayPath(target, workspace)}`;
+      return `Created directory ${displayPath(target, workspace)}`;
     }
     case 'delete_path': {
       const target = resolveTarget(args.path, workspace);
@@ -322,7 +322,7 @@ async function execute(name, args, ctx) {
       const stat = await fsp.stat(target);
       await fsp.rm(target, { recursive: stat.isDirectory(), force: false });
       ctx.onFile?.({ action: 'deleted', path: target, display: displayPath(target, workspace), bytes: 0 });
-      return `已删除 ${displayPath(target, workspace)}`;
+      return `Deleted ${displayPath(target, workspace)}`;
     }
     case 'run_command': {
       const cwd = args.cwd ? resolveTarget(args.cwd, workspace) : workspace || os.homedir();
@@ -335,8 +335,8 @@ async function execute(name, args, ctx) {
             const parts = [`$ ${args.command}`];
             if (stdout) parts.push(String(stdout).trim());
             if (stderr) parts.push(`[stderr]\n${String(stderr).trim()}`);
-            if (err) parts.push(`[exit] code=${err.code ?? 'unknown'} ${err.killed ? '(超时或终止)' : ''}`);
-            if (!stdout && !stderr && !err) parts.push('(无输出)');
+            if (err) parts.push(`[exit] code=${err.code ?? 'unknown'} ${err.killed ? '(timeout or killed)' : ''}`);
+            if (!stdout && !stderr && !err) parts.push('(no output)');
             resolve(truncate(parts.join('\n\n'), MAX_OUTPUT));
           }
         );
@@ -348,9 +348,9 @@ async function execute(name, args, ctx) {
       try {
         parsed = new URL(url);
       } catch {
-        throw new Error('URL 格式不正确');
+        throw new Error('Invalid URL');
       }
-      if (!/^https?:$/.test(parsed.protocol)) throw new Error('仅支持 http/https 协议');
+      if (!/^https?:$/.test(parsed.protocol)) throw new Error('Only http/https is supported');
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 30000);
       try {
@@ -379,12 +379,12 @@ async function execute(name, args, ctx) {
         env: args.env,
         cwd: args.cwd
       });
-      return `已安装 MCP server「${server.name}」（启动命令：${server.command} ${(server.args || []).join(
+      return `Installed MCP server "${server.name}" (command: ${server.command} ${(server.args || []).join(
         ' '
       )}）。请用 dgxay mcp start ${server.id} 或在 /mcp 面板中启动。`;
     }
     default:
-      throw new Error(`未知工具：${name}`);
+      throw new Error(`Unknown tool: ${name}`);
   }
 }
 

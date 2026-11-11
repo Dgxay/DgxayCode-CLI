@@ -52,48 +52,21 @@ function includes(text, needle, message) {
   }
 }
 
-/** 极简终端模拟：只支持 \r / \n / \b，用来验证不依赖 ANSI 光标序列的实现 */
+/** 终端模拟：使用 test/term-emulator.js（按显示宽度维护网格） */
+const { Term } = require('./term-emulator');
+
 function makeFakeTerm(width = 80) {
-  let column = 0;
-  const cells = [''];
-  let raw = '';
-  return {
-    isTTY: true,
-    columns: width,
-    write(chunk) {
-      raw += chunk;
-      for (const char of String(chunk)) {
-        if (char === '\r') column = 0;
-        else if (char === '\n') {
-          cells.push('');
-          column = 0;
-        } else if (char === '\b') column = Math.max(0, column - 1);
-        else {
-          const arr = Array.from(cells[cells.length - 1] || '');
-          while (arr.length < column) arr.push(' ');
-          arr[column] = char;
-          cells[cells.length - 1] = arr.join('');
-          column += 1;
-        }
-      }
-      return true;
-    },
-    get lines() {
-      return cells.map((line) => line.replace(/\s+$/, ''));
-    },
-    get raw() {
-      return raw;
-    }
-  };
+  return new Term(width);
 }
 
-/* ------------------------------ 进程辅助 ------------------------------ */
+/* ------------------------------ 进程与配置辅助 ------------------------------ */
 
+/** 建一个临时数据目录（清理由调用方负责） */
 function makeHome(name) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `dgxay-${name}-`));
-  return dir;
+  return fs.mkdtempSync(path.join(os.tmpdir(), `dgxay-${name}-`));
 }
 
+/** 在指定数据目录下运行 CLI，返回 { code, stdout, stderr, output } */
 function runCli(args, options = {}) {
   return new Promise((resolve) => {
     const env = {
@@ -114,11 +87,8 @@ function runCli(args, options = {}) {
     let stderr = '';
     child.stdout.on('data', (chunk) => (stdout += chunk.toString('utf8')));
     child.stderr.on('data', (chunk) => (stderr += chunk.toString('utf8')));
-    if (options.stdin !== undefined) {
-      child.stdin.end(String(options.stdin));
-    } else {
-      child.stdin.end();
-    }
+    if (options.stdin !== undefined) child.stdin.end(String(options.stdin));
+    else child.stdin.end();
     const timer = setTimeout(() => child.kill(), options.timeout || 60000);
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -352,7 +322,7 @@ async function main() {
         const home = homeOf('think');
         writeConfig(home, baseConfig(baseUrl, 'openai'));
         const result = await runCli(['run', '-p', 'THINK 想想'], { home });
-        includes(result.stdout, '已思考');
+        includes(result.stdout, 'Thought for');
       });
 
       await test('--output json 输出结构化结果', async () => {
@@ -369,7 +339,7 @@ async function main() {
         writeConfig(home, baseConfig('http://127.0.0.1:1/v1', 'openai'));
         const result = await runCli(['run', '-p', '你好'], { home, timeout: 30000 });
         assert(result.code !== 0, '错误时应返回非 0');
-        includes(result.output, '出错了');
+        includes(result.output, 'Error');
       });
     }
 
@@ -387,7 +357,7 @@ async function main() {
           home
         });
         equal(result.code, 0, result.output);
-        includes(result.stdout, '读取文件');
+        includes(result.stdout, 'Read note.txt');
         includes(result.stdout, 'mock');
         equal(mock.requests.length, 2, '应当发生两轮请求（工具调用 + 总结）');
         const second = JSON.stringify(mock.requests[1].body);
@@ -421,11 +391,11 @@ async function main() {
           ['run', '-p', 'TOOL_CMD 跑个命令', '-C', workspace, '-m', 'work', '--permission', 'normal'],
           { home }
         );
-        includes(result.output, '需授权');
-        includes(result.output, '已自动拒绝');
+        includes(result.output, '[permission]');
+        includes(result.output, 'Not an interactive terminal');
         equal(mock.requests.length, 2, '拒绝后仍应把错误回传给模型');
         const second = JSON.stringify(mock.requests[1].body);
-        includes(second, '拒绝了该操作');
+        includes(second, 'declined');
       });
 
       await test('普通权限 + --yes：自动放行并执行工具', async () => {
@@ -439,7 +409,7 @@ async function main() {
           { home }
         );
         equal(result.code, 0, result.output);
-        includes(result.stdout, '执行命令');
+        includes(result.stdout, 'Run echo hello-from-mock');
         const second = JSON.stringify(mock.requests[1].body);
         includes(second, 'hello-from-mock');
       });
@@ -453,7 +423,7 @@ async function main() {
         mock.reset();
         const result = await runCli(['run', '-p', 'TOOL_READ 读一下', '-C', workspace, '-m', 'work'], { home });
         equal(result.code, 0, result.output);
-        includes(result.stdout, '读取文件');
+        includes(result.stdout, 'Read note.txt');
       });
 
       await test('write_file 在工作空间内创建文件', async () => {
@@ -464,13 +434,13 @@ async function main() {
         const { execute } = require(path.join(ROOT, 'src', 'core', 'tools'));
         const ctx = { permission: 'full', workspace, requestApproval: async () => true };
         const out = await execute('write_file', { path: 'sub/new.txt', content: '内容' }, ctx);
-        includes(out, '已创建文件');
+        includes(out, 'Created');
         equal(fs.readFileSync(path.join(workspace, 'sub', 'new.txt'), 'utf8'), '内容');
         let denied = false;
         try {
           await execute('write_file', { path: 'x.txt', content: 'y' }, { permission: 'none', workspace });
         } catch (err) {
-          denied = /不允许|禁止/.test(err.message);
+          denied = /does not allow|forbid/i.test(err.message);
         }
         assert(denied, '无权限写入必须被拒绝');
       });
@@ -481,7 +451,7 @@ async function main() {
         try {
           await execute('write_file', { path: 'x.txt', content: 'y' }, { permission: 'normal', workspace: process.cwd() });
         } catch (err) {
-          blocked = /授权回调/.test(err.message);
+          blocked = /approval callback/i.test(err.message);
         }
         assert(blocked, '缺少授权回调必须被阻断');
       });
@@ -592,7 +562,7 @@ async function main() {
         writeConfig(home, baseConfig(baseUrl, 'openai'));
         const result = await runCli(['doctor', '--offline'], { home });
         equal(result.code, 0, result.output);
-        includes(result.stdout, '数据目录');
+        includes(result.stdout, 'Data directory writable');
         includes(result.stdout, 'Mock');
       });
 
@@ -601,7 +571,7 @@ async function main() {
         writeConfig(home, baseConfig(baseUrl, 'openai'));
         const result = await runCli(['doctor'], { home });
         equal(result.code, 0, result.output);
-        includes(result.stdout, '连通性');
+        includes(result.stdout, 'Connectivity');
         includes(result.stdout, 'ms');
       });
     }
@@ -699,15 +669,15 @@ async function main() {
       await test('系统提示包含权限与工作模式规则', async () => {
         const { systemPromptFor } = require(path.join(ROOT, 'src', 'core', 'prompt'));
         const prompt = systemPromptFor({ mode: 'work', permission: 'normal', workspace: '/tmp/ws' });
-        includes(prompt, '任务执行纪律');
-        includes(prompt, '普通权限');
+        includes(prompt, 'Execution discipline');
+        includes(prompt, 'normal');
         includes(prompt, '/tmp/ws');
       });
 
       await test('未完成的收尾话术会被识别', async () => {
         const { looksUnfinishedWork } = require(path.join(ROOT, 'src', 'core', 'prompt'));
-        assert(looksUnfinishedWork({ content: '接下来我会创建文件。' }), '应识别为未完成');
-        assert(!looksUnfinishedWork({ content: '已完成全部修改并验证通过。' }), '不应误判');
+        assert(looksUnfinishedWork({ content: 'Next I will create the file.' }), 'should detect unfinished work');
+        assert(!looksUnfinishedWork({ content: 'All changes are done and verified.' }), 'should not misfire');
       });
     }
 
@@ -722,8 +692,8 @@ async function main() {
         equal(result.code, 0, result.output);
         includes(result.stdout, 'DgxayCode');
         includes(result.stdout, 'mock'); // 模型的回复
-        includes(result.stdout, '斜杠命令'); // /help 的输出
-        includes(result.stdout, '再见');
+        includes(result.stdout, 'Commands'); // /help 的输出
+        includes(result.stdout, 'Bye');
         assert(!/\x1b\[2K/.test(result.stdout), '管道输出不应包含清屏控制序列');
         const chats = readJson(home, 'chats.json');
         equal(chats[0].messages.filter((m) => m.role === 'user')[0].content, '你好呀');
@@ -747,7 +717,7 @@ async function main() {
         const home = homeOf('repl-perm');
         writeConfig(home, baseConfig(baseUrl, 'openai'));
         const result = await runCli([], { home, stdin: '/permission full\n/mode work\n/exit\n' });
-        includes(result.stdout, '完全权限');
+        includes(result.stdout, 'Full access');
         const config = readJson(home, 'config.json');
         equal(config.ui.permission, 'full');
       });
@@ -758,7 +728,7 @@ async function main() {
         config.providers[0].models.push({ id: 'mock-b', name: 'Mock B', contextWindow: 0 });
         writeConfig(home, config);
         const result = await runCli([], { home, stdin: '/model mock-b\n/exit\n' });
-        includes(result.stdout, '已切换到');
+        includes(result.stdout, 'Switched to');
         equal(readJson(home, 'config.json').activeModelId, 'mock-b');
       });
 
@@ -769,7 +739,7 @@ async function main() {
         writeConfig(home, baseConfig(baseUrl, 'openai'));
         mock.reset();
         const result = await runCli([], { home, stdin: '/skill qa\n你好\n/exit\n' });
-        includes(result.stdout, '已在本次对话启用技能');
+        includes(result.stdout, 'Skill enabled');
         const body = JSON.stringify(mock.requests[0].body);
         includes(body, 'ZQX');
       });
@@ -885,22 +855,57 @@ async function main() {
         includes(out.buf, '第一条');
       });
 
-      await test('行编辑器：逐字输入只占一行，不使用 ANSI 光标序列', async () => {
+      await test('行编辑器：逐字输入只重绘一组盒子', async () => {
         const { LineEditor } = require(path.join(ROOT, 'src', 'cli', 'editor'));
         const { EventEmitter } = require('events');
-        const term = makeFakeTerm(80);
+        const term = makeFakeTerm(72);
         const input = new EventEmitter();
         input.isTTY = true;
         input.setRawMode = () => {};
         input.resume = () => {};
-        const editor = new LineEditor({ input, output: term, prompt: '› model ', multiline: true });
+        const editor = new LineEditor({
+          input,
+          output: term,
+          placeholder: 'Ask',
+          multiline: true,
+          capabilities: { cursorUp: true, clearLine: true, interactive: true }
+        });
         const done = editor.question();
         for (const char of '/permission full') input.emit('keypress', char, { name: char });
+        // 按键处理是异步队列，等它跑完再断言
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const state = term.raw;
         input.emit('keypress', '\r', { name: 'return' });
         const result = await done;
         equal(result.value, '/permission full');
-        equal(term.lines.filter((l) => l.includes('/permission full')).length, 1, '输入只应占一行');
-        assert(!/\x1b\[\d+[AC]/.test(term.raw), '不应使用光标上移或右移序列');
+        // 每帧都要先擦除再重画：出现清行序列说明没有叠加
+        assert(/\x1b\[2K/.test(state), '应逐行清空后再重绘');
+        assert(/\x1b\[\d+A/.test(state), '应回到框架顶部');
+        assert(state.includes('┐'), '应画出完整边框');
+        equal(state.split('/permission full').length - 1, 1, '最后一次输入应只出现一次');
+      });
+
+      await test('行编辑器：降级终端仍能正常输入', async () => {
+        const { LineEditor } = require(path.join(ROOT, 'src', 'cli', 'editor'));
+        const { EventEmitter } = require('events');
+        const term = makeFakeTerm(72);
+        const input = new EventEmitter();
+        input.isTTY = true;
+        input.setRawMode = () => {};
+        input.resume = () => {};
+        const editor = new LineEditor({
+          input,
+          output: term,
+          placeholder: 'Ask',
+          multiline: true,
+          capabilities: { cursorUp: false, clearLine: false, interactive: true }
+        });
+        const done = editor.question();
+        for (const char of 'hi') input.emit('keypress', char, { name: char });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        input.emit('keypress', '\r', { name: 'return' });
+        equal((await done).value, 'hi');
+        assert(!/\x1b\[\d+A/.test(term.raw), '降级模式不应使用光标上移');
       });
 
       await test('行编辑器：Tab 补全走 item.apply 而不是 Function.prototype.apply', async () => {
@@ -927,6 +932,59 @@ async function main() {
         equal(result.value, '/permission ');
       });
 
+      await test('行编辑器：擦除框架后光标停在框架顶行，重绘不向下漂移', async () => {
+        const { LineEditor } = require(path.join(ROOT, 'src', 'cli', 'editor'));
+        const { EventEmitter } = require('events');
+        const term = makeFakeTerm(72);
+        const input = new EventEmitter();
+        input.isTTY = true;
+        input.setRawMode = () => {};
+        input.resume = () => {};
+        const editor = new LineEditor({
+          input,
+          output: term,
+          placeholder: 'Ask',
+          multiline: true,
+          capabilities: { cursorUp: true, clearLine: true, interactive: true }
+        });
+        const done = editor.question();
+        for (const char of 'hi') input.emit('keypress', char, { name: char });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        // 光标应停在盒子内容行；盒子固定在终端的当前行，不会额外往下跳
+        const contentRow = term.row;
+        includes(term.lines[contentRow], 'hi', '光标所在行应有输入内容');
+        assert(
+          term.lines.some((line) => line.startsWith('┌')),
+          '应画出顶框'
+        );
+        assert(
+          term.lines.some((line) => line.startsWith('└')),
+          '应画出底框'
+        );
+        // 顶框与底框之间恰好隔一行内容
+        const top = term.lines.findIndex((line) => line.startsWith('┌'));
+        const bottom = term.lines.findIndex((line, i) => i > top && line.startsWith('└'));
+        equal(bottom, top + 2, '盒子恰好三行');
+
+        // 模拟多轮「收起 → 输出 → 重画」：每轮上方新增内容，盒子必须继续成为完整三行，
+        // 不能出现两个顶框叠在上方这种残影。
+        for (let round = 1; round <= 3; round += 1) {
+          editor.suspend();
+          term.write('answer line\n');
+          term.write('usage line\n');
+          editor.resume();
+          const tops = term.lines.reduce((acc, line, i) => (line.startsWith('┌') ? [...acc, i] : acc), []);
+          equal(tops.length, 1, `第 ${round} 轮应只有一个顶框（实际 ${tops.length} 个）`);
+          const frame = term.lines.slice(tops[0], tops[0] + 3);
+          includes(frame[1], 'hi', `第 ${round} 轮内容仍在框内`);
+          assert(frame[2].startsWith('└'), `第 ${round} 轮底框位置正确`);
+        }
+
+        input.emit('keypress', '\r', { name: 'return' });
+        equal((await done).value, 'hi');
+      });
+
       await test('行编辑器：多行续写与超宽横向滚动', async () => {
         const { LineEditor } = require(path.join(ROOT, 'src', 'cli', 'editor'));
         const { EventEmitter } = require('events');
@@ -940,9 +998,11 @@ async function main() {
 
         const term1 = makeFakeTerm(80);
         const input1 = makeInput();
-        const e1 = new LineEditor({ input: input1, output: term1, prompt: '› ', multiline: true });
+        const caps = { cursorUp: true, clearLine: true, interactive: true };
+        const e1 = new LineEditor({ input: input1, output: term1, prompt: '› ', multiline: true, capabilities: caps });
         const d1 = e1.question();
         for (const char of '第一行\\') input1.emit('keypress', char, { name: char });
+        await new Promise((r) => setTimeout(r, 20));
         input1.emit('keypress', '\r', { name: 'return' });
         for (const char of '第二行') input1.emit('keypress', char, { name: char });
         input1.emit('keypress', '\r', { name: 'return' });
@@ -950,14 +1010,16 @@ async function main() {
 
         const term2 = makeFakeTerm(40);
         const input2 = makeInput();
-        const e2 = new LineEditor({ input: input2, output: term2, prompt: '› ', multiline: true });
+        const e2 = new LineEditor({ input: input2, output: term2, prompt: '› ', multiline: true, capabilities: caps });
         const d2 = e2.question();
         const long = '很长的输入内容'.repeat(10);
         for (const char of long) input2.emit('keypress', char, { name: char });
+        await new Promise((r) => setTimeout(r, 40));
         input2.emit('keypress', '\r', { name: 'return' });
         equal((await d2).value, long);
         const widest = Math.max(...term2.lines.map((line) => line.length));
-        assert(widest <= 40, `输入行不应超过终端宽度（实际 ${widest}）`);
+        assert(widest <= 40, `盒子不应超过终端宽度（实际 ${widest}）`);
+        assert(term2.raw.includes('┐'), '应画出完整盒子');
       });
 
       await test('历史只发送最近 24 条', async () => {

@@ -83,7 +83,7 @@ function runShellCommand({ command, workspace, onOutput }) {
       if (total > MAX_TOTAL) {
         if (!truncated) {
           truncated = true;
-          const note = '\n…（输出过长，已截断）\n';
+          const note = '\n… (output too long, truncated)\n';
           stderr += note;
           onOutput?.(note, 'stderr');
         }
@@ -105,13 +105,13 @@ function runShellCommand({ command, workspace, onOutput }) {
     };
 
     child.on('error', (err) => {
-      onOutput?.(`\n[启动失败] ${err.message}\n`, 'stderr');
+      onOutput?.(`\n[failed to start] ${err.message}\n`, 'stderr');
       finish(-1, null);
     });
     child.on('exit', (code, signal) => finish(code, signal));
 
     const timer = setTimeout(() => {
-      onOutput?.('\n…（命令执行超过 5 分钟，已终止）\n', 'stderr');
+      onOutput?.('\n… (command ran longer than 5 minutes, terminated)\n', 'stderr');
       killProcessTree(child);
     }, TIMEOUT_MS);
     child.on('exit', () => clearTimeout(timer));

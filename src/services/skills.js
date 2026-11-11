@@ -111,7 +111,7 @@ function readSkill(name) {
     const skillName = String(meta.name || fallbackName).trim();
     if (skillName.toLowerCase() !== target) continue;
     const content =
-      body.length > MAX_SKILL_CONTENT ? `${body.slice(0, MAX_SKILL_CONTENT)}\n\n…（技能内容已截断）` : body;
+      body.length > MAX_SKILL_CONTENT ? `${body.slice(0, MAX_SKILL_CONTENT)}\n\n… (skill content truncated)` : body;
     return {
       name: skillName,
       description: String(meta.description || describe(body) || '').trim(),

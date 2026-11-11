@@ -66,15 +66,47 @@ dgxay run -p "summarize this repo's architecture" -o json | jq -r .text
 
 ## Interactive mode
 
+The interface has three parts:
+
+- **Input box** — a bordered box that adapts to the terminal width and wraps long input
+- **Command menu** — appears when you type `/`, navigable with the arrow keys
+- **Thinking area** — shows a live timer and the model's reasoning while it works
+
 | Input | Action |
 | --- | --- |
 | text | Send to the model |
+| `/` | Open the command menu |
+| `↑` / `↓` | Menu open: move the selection. Menu closed: `↑` recalls your previous prompt |
+| `Tab` | Complete the selected command |
+| `Enter` | Menu open: run the selected command. Otherwise: send the message |
+| `Esc` | Close the menu |
 | `!command` | Run a shell command; output joins the context, e.g. `!git status` |
-| `/` | Slash-command completion |
 | trailing `\` | Continue on the next line |
 | `Ctrl+C` | Abort while generating; clear the input when non-empty; exit when idle |
 | `Ctrl+D` | Exit |
-| `↑` / `↓` | Input history |
+
+### Language
+
+The interface is English by default. Switch to Chinese with `DGXAY_LANG=zh dgxay`.
+The AI replies in the language you write in.
+
+### Thinking
+
+While the model reasons, the terminal shows a live timer:
+
+```
+  ⠿ Thinking 2.4s latest reasoning fragment…
+```
+
+When it finishes, that folds into a one-line summary followed by the full reasoning in grey:
+
+```
+  ⌁ Thought for 12.8s · 1450 chars
+  │ First I'll look at the directory layout…
+  │ Then read the entry file…
+```
+
+Set `DGXAY_SHOW_REASONING=0` to keep only the summary.
 
 ### Slash commands
 
@@ -138,7 +170,11 @@ API keys are stored **in plain text** in `config.json`. Use `DGXAY_HOME=/tmp/tes
 | `DGXAY_HOME` | Override the data directory |
 | `DGXAY_API_KEY` | API key used by `config init` |
 | `DGXAY_TOKEN_KEY` | Passphrase that encrypts OAuth tokens (plain base64 otherwise) |
-| `DGXAY_SHOW_REASONING=1` | Stream the reasoning text (collapsed to one line by default) |
+| `DGXAY_LANG=zh` | Use the Chinese interface (English by default) |
+| `DGXAY_SHOW_REASONING=0` | Show only the thinking summary, not the reasoning text |
+| `DGXAY_REASONING_LINES=6` | How many reasoning lines to display |
+| `DGXAY_NO_CURSOR_UP=1` | Force the single-line fallback input |
+| `DGXAY_ASCII=1` | Force ASCII box drawing characters |
 | `DGXAY_COLOR=always\|never` | Force colours on/off |
 | `NO_COLOR` | Disable colours |
 | `DGXAY_DEBUG=1` | Debug output and stack traces |
@@ -146,13 +182,18 @@ API keys are stored **in plain text** in `config.json`. Use `DGXAY_HOME=/tmp/tes
 
 ## Terminal compatibility
 
-Streaming output relies only on `\r` (carriage return) and space padding — capabilities every terminal supports.
-It never uses cursor-up or erase-line sequences: some Windows console combinations silently ignore them, which
-makes every delta arrive as a new line.
+The terminal is probed at startup and the UI adapts:
 
-Rendering happens in two steps: while generating, only the current line is refreshed as a plain-text preview;
-when generation ends, the whole reply is laid out once as Markdown (headings, lists, tables, code blocks).
-Every paragraph therefore appears exactly once in any terminal.
+**Cursor-up supported** (Windows Terminal, VSCode, iTerm, most Linux terminals)
+The input is a real box and the command menu refreshes in place without leftovers.
+
+**Cursor-up unsupported** (legacy conhost)
+Falls back to a single-line `❯` prompt with in-place redraw, so nothing can stack up.
+
+Streaming text always uses only `\r` and space padding; while generating, just the last line is refreshed, and
+the whole reply is laid out once as Markdown at the end. Every paragraph appears exactly once.
+
+Force the fallback with `DGXAY_NO_CURSOR_UP=1`, or ASCII borders with `DGXAY_ASCII=1`.
 
 ## Differences from the desktop app
 

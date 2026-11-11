@@ -25,23 +25,23 @@ function overview() {
   const available = settings.availablePermissions(config);
   const reviewer = resolveReviewer(config, config.activeProviderId);
   print.blank();
-  print.heading('权限');
+  print.heading('Permission');
   for (const [key, meta] of Object.entries(settings.PERMISSIONS)) {
     const usable = available.includes(key);
     const active = current === key;
     print.write(
-      `  ${active ? COLORS.accent('❯') : ' '} ${COLORS.accent(key.padEnd(8))} ${usable ? meta.label : COLORS.faint(`${meta.label}（不可用）`)}`
+      `  ${active ? COLORS.accent('❯') : ' '} ${COLORS.accent(key.padEnd(8))} ${usable ? meta.label : COLORS.faint(`${meta.label} (unavailable)`)}`
     );
     print.write(`    ${COLORS.faint(meta.desc)}`);
   }
   print.blank();
   if (reviewer) {
-    print.hint(`自动审查模型：${reviewer.provider.name} / ${reviewer.modelId}（来源：${reviewer.source === 'own' ? '当前供应商' : '默认供应商'}）`);
+    print.hint(`Review model: ${reviewer.provider.name} / ${reviewer.modelId} (from: ${reviewer.source === 'own' ? 'current provider' : 'default provider'})`);
   } else {
-    print.hint('尚未配置审查模型，自动审查不可用。用 dgxay provider review <供应商> --model <模型ID> 设置');
+    print.hint('No review model configured, so auto review is unavailable. Set one with dgxay provider review <provider> --model <model-id>');
   }
   if (config.ui?.permission === 'auto' && !available.includes('auto')) {
-    print.warn('配置里的自动审查已失效，当前按普通权限运行');
+    print.warn('Auto review from config is no longer valid; running with normal permission');
   }
   print.blank();
   print.hint('dgxay permission set <none|normal|auto|full>');
@@ -58,20 +58,20 @@ async function run({ argv, runtime }) {
 
   if (action === 'set' || action === 'use') {
     const level = rest[0];
-    if (!level) throw Object.assign(new Error('用法：dgxay permission set <none|normal|auto|full>'), { userError: true });
+    if (!level) throw Object.assign(new Error('Usage: dgxay permission set <none|normal|auto|full>'), { userError: true });
     if (!settings.PERMISSIONS[level]) {
-      print.fail('权限只能是 none / normal / auto / full');
+      print.fail('Permission must be one of none / normal / auto / full');
       return 1;
     }
     if (level === 'auto' && !settings.hasReviewModel(config)) {
-      print.fail('自动审查不可用：当前或默认供应商没有配置有效的审查模型');
-      print.hint('先运行：dgxay provider review <供应商> --model <模型ID>');
+      print.fail('Auto review unavailable: neither the current nor the default provider has a valid review model');
+      print.hint('Run first: dgxay provider review <provider> --model <model-id>');
       return 1;
     }
     settings.setPermission(level);
-    print.ok(`权限已设置为：${settings.PERMISSIONS[level].label}`);
+    print.ok(`Permission set to: ${settings.PERMISSIONS[level].label}`);
     if (level === 'full') {
-      print.warn('完全权限下 AI 可以执行任意命令、读写任意文件，且不会询问');
+      print.warn('With full access the AI can run any command and read or write any file without asking');
     }
     void runtime;
     return 0;
@@ -80,28 +80,28 @@ async function run({ argv, runtime }) {
   if (settings.PERMISSIONS[action]) {
     const level = action;
     if (level === 'auto' && !settings.hasReviewModel(config)) {
-      print.fail('自动审查不可用：请先配置审查模型');
+      print.fail('Auto review unavailable: configure a review model first');
       return 1;
     }
     settings.setPermission(level);
-    print.ok(`权限已设置为：${settings.PERMISSIONS[level].label}`);
+    print.ok(`Permission set to: ${settings.PERMISSIONS[level].label}`);
     return 0;
   }
 
-  print.fail(`未知用法：${action}`);
-  print.hint('可用：list / set <档位>');
+  print.fail(`Unknown usage: ${action}`);
+  print.hint('Available: list / set <level>');
   return 1;
 }
 
 module.exports = {
   name: 'permission',
   aliases: ['perm'],
-  summary: '四档权限：查看与切换',
-  usage: 'dgxay permission [list|show|set <档位>]',
+  summary: 'Four permission levels: show and switch',
+  usage: 'dgxay permission [list|show|set <level>]',
   options,
   subcommands: [
-    ['list', '查看权限与可用性'],
-    ['set <档位>', '切换权限（写入配置）']
+    ['list', 'Show permissions and availability'],
+    ['set <level>', 'Switch permission (writes config)']
   ],
   examples: ['dgxay permission', 'dgxay permission set normal', 'dgxay permission set auto'],
   run

@@ -103,29 +103,29 @@ function usage(command) {
   write(`${COLORS.bold(`dgxay ${command.name}`)}${command.summary ? COLORS.faint(` — ${command.summary}`) : ''}`);
   if (command.usage) {
     blank();
-    write(COLORS.faint('用法'));
+    write(COLORS.faint('Usage'));
     write(`  ${command.usage}`);
   }
   if (command.examples?.length) {
     blank();
-    write(COLORS.faint('示例'));
+    write(COLORS.faint('Examples'));
     for (const example of command.examples) write(`  ${COLORS.cyan(example)}`);
   }
   if (command.options?.length) {
     blank();
-    write(COLORS.faint('选项'));
+    write(COLORS.faint('Options'));
     const rows = command.options.map((opt) => {
       const alias = opt.alias ? [].concat(opt.alias).map((a) => (a.length === 1 ? `-${a}` : a)).join(', ') : '';
       const name = `--${opt.name}${opt.type && opt.type !== 'boolean' ? ` <${opt.valueName || opt.type}>` : ''}`;
       return [alias ? `${alias}, ${name}` : name, opt.desc || ''];
     });
-    rows.push(['-h, --help', '显示帮助']);
+    rows.push(['-h, --help', 'Show help']);
     const width = Math.max(...rows.map(([flag]) => displayWidth(flag)));
     for (const [flag, desc] of rows) write(`  ${COLORS.cyan(padWidth(flag, width))}  ${COLORS.faint(desc)}`);
   }
   if (command.subcommands?.length) {
     blank();
-    write(COLORS.faint('子命令'));
+    write(COLORS.faint('Commands'));
     const width = Math.max(...command.subcommands.map(([, name]) => displayWidth(name)));
     for (const [name, desc] of command.subcommands) write(`  ${COLORS.accent(padWidth(name, width))}  ${desc}`);
   }

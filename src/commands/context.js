@@ -19,15 +19,15 @@ async function run({ argv }) {
   const model = settings.activeModel(config);
   const chat = ref ? sessions.resolveChat(ref) : sessions.listChats()[0] || null;
   if (ref && !chat) {
-    print.fail(`找不到会话：${ref}`);
+    print.fail(`Conversation not found: ${ref}`);
     return 1;
   }
   if (!chat) {
-    print.hint('还没有会话记录');
+    print.hint('No conversation history yet');
     return 0;
   }
   process.stdout.write(`\n${contextReport(contextInfo(chat, model))}\n`);
-  print.hint(`会话：${chat.title}（${chat.id}）`);
+  print.hint(`Conversation: ${chat.title} (${chat.id})`);
   print.blank();
   return 0;
 }
@@ -35,8 +35,8 @@ async function run({ argv }) {
 module.exports = {
   name: 'context',
   aliases: ['ctx'],
-  summary: '查看上下文用量估算',
-  usage: 'dgxay context [会话序号|ID]',
+  summary: 'Show the estimated context usage',
+  usage: 'dgxay context [n|id]',
   options,
   examples: ['dgxay context', 'dgxay context 1'],
   run

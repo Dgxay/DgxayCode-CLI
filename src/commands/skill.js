@@ -16,7 +16,7 @@ const skills = require('../services/skills');
 const cfg = require('../services/config');
 const settings = require('../services/settings');
 
-const options = [{ name: 'json', type: 'boolean', desc: '输出 JSON' }];
+const options = [{ name: 'json', type: 'boolean', desc: 'Output JSON' }];
 
 async function run({ argv }) {
   const { action: rawAction, rest, options: opts } = actionFirst(argv, options);
@@ -34,9 +34,9 @@ async function run({ argv }) {
       return 0;
     }
     print.blank();
-    print.heading(`技能（${settings.homeRelative(cfg.SKILLS_DIR)}）`);
+    print.heading(`Skills (${settings.homeRelative(cfg.SKILLS_DIR)})`);
     if (!list.length) {
-      print.hint('  还没有技能。放一个 name.md 或 <目录>/SKILL.md 到技能目录即可。');
+      print.hint('  No skills yet. Drop a name.md or <dir>/SKILL.md into the skills directory.');
       print.blank();
       return 0;
     }
@@ -44,24 +44,24 @@ async function run({ argv }) {
     print.table(
       [
         { title: '#', max: 3 },
-        { title: '名称', max: 24 },
-        { title: '描述', max: 60 },
-        { title: '文件', max: 24 }
+        { title: 'Name', max: 24 },
+        { title: 'Description', max: 60 },
+        { title: 'File', max: 24 }
       ],
       rows
     );
     print.blank();
-    print.hint('在对话中使用 /skill <名称> 启用；单次运行可加 --skill <名称>');
+    print.hint('Enable with /skill <name> in a conversation; for a single run add --skill <name>');
     print.blank();
     return 0;
   }
 
   if (action === 'show' || action === 'cat') {
     const name = rest[0];
-    if (!name) throw Object.assign(new Error('用法：dgxay skill show <名称>'), { userError: true });
+    if (!name) throw Object.assign(new Error('Usage: dgxay skill show <name>'), { userError: true });
     const skill = skills.readSkill(name);
     if (!skill) {
-      print.fail(`找不到技能：${name}`);
+      print.fail(`Skill not found: ${name}`);
       return 1;
     }
     print.blank();
@@ -73,21 +73,21 @@ async function run({ argv }) {
     return 0;
   }
 
-  print.fail(`未知子命令：${action}`);
-  print.hint('可用：list / show / path');
+  print.fail(`Unknown command: ${action}`);
+  print.hint('Available: list / show / path');
   return 1;
 }
 
 module.exports = {
   name: 'skill',
   aliases: ['skills'],
-  summary: '技能列表与查看',
+  summary: 'List and view skills',
   usage: 'dgxay skill <list|show|path>',
   options,
   subcommands: [
-    ['list', '列出技能'],
-    ['show <名称>', '查看技能正文'],
-    ['path', '显示技能目录']
+    ['list', 'List skills'],
+    ['show <name>', 'View skill content'],
+    ['path', 'Show the skills directory']
   ],
   examples: ['dgxay skill list', 'dgxay skill show review', 'dgxay skill path'],
   run

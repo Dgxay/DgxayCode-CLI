@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * CLI 调度入口：全局选项 → 子命令分发 → 无参数时进入交互模式。
+ * CLI 调度入口：全局选项 → 子命令分发 → 无参数时Start the interactive shell。
  */
 
 const { COLORS } = require('./ansi');
@@ -11,23 +11,23 @@ const print = require('./print');
 const { VERSION, BIN } = require('../services/version');
 
 const GLOBAL_OPTIONS = [
-  { name: 'help', alias: 'h', type: 'boolean', desc: '显示帮助' },
-  { name: 'version', alias: 'v', type: 'boolean', desc: '显示版本号' },
-  { name: 'home', type: 'string', valueName: 'dir', desc: '覆盖数据目录（默认 ~/.dcb，也可用 DGXAY_HOME）' },
-  { name: 'debug', type: 'boolean', desc: '输出调试信息与堆栈' },
-  { name: 'no-color', type: 'boolean', desc: '关闭彩色输出（等同 NO_COLOR=1）' },
-  { name: 'print', alias: 'p', type: 'boolean', desc: '单次运行：发送提示词后输出结果并退出' },
-  { name: 'prompt', type: 'string', valueName: 'text', desc: '单次运行的提示词' },
-  { name: 'output', alias: 'o', type: 'string', valueName: 'format', desc: '输出格式：text / json（配合 --print）' },
-  { name: 'mode', alias: 'm', type: 'string', valueName: 'mode', desc: '模式：chat / work' },
-  { name: 'permission', type: 'string', valueName: 'level', desc: '权限：none / normal / auto / full' },
-  { name: 'workspace', alias: 'C', type: 'string', valueName: 'dir', desc: '工作空间目录' },
-  { name: 'model', type: 'string', valueName: 'id', desc: '指定模型' },
-  { name: 'provider', type: 'string', valueName: 'name', desc: '指定供应商' },
-  { name: 'skill', type: 'string', valueName: 'name', desc: '本次运行启用的技能' },
-  { name: 'resume', alias: 'r', type: 'string', valueName: 'id|index', desc: '恢复指定会话' },
-  { name: 'continue', alias: 'c', type: 'boolean', desc: '恢复最近一次会话' },
-  { name: 'yes', alias: 'y', type: 'boolean', desc: '自动同意所有授权请求（仅单次运行，慎用）' }
+  { name: 'help', alias: 'h', type: 'boolean', desc: 'Show help' },
+  { name: 'version', alias: 'v', type: 'boolean', desc: 'Show version' },
+  { name: 'home', type: 'string', valueName: 'dir', desc: 'Override the data directory (default ~/.dcb)' },
+  { name: 'debug', type: 'boolean', desc: 'Print debug information and stack traces' },
+  { name: 'no-color', type: 'boolean', desc: 'Disable colors (same as NO_COLOR=1)' },
+  { name: 'print', alias: 'p', type: 'boolean', desc: 'One-shot: send a prompt, print the reply, exit' },
+  { name: 'prompt', type: 'string', valueName: 'text', desc: 'Prompt for the one-shot run' },
+  { name: 'output', alias: 'o', type: 'string', valueName: 'format', desc: 'Output format: text / json' },
+  { name: 'mode', alias: 'm', type: 'string', valueName: 'mode', desc: 'Mode: chat / work' },
+  { name: 'permission', type: 'string', valueName: 'level', desc: 'Permission: none / normal / auto / full' },
+  { name: 'workspace', alias: 'C', type: 'string', valueName: 'dir', desc: 'Workspace directory' },
+  { name: 'model', type: 'string', valueName: 'id', desc: 'Model id' },
+  { name: 'provider', type: 'string', valueName: 'name', desc: 'Provider id or name' },
+  { name: 'skill', type: 'string', valueName: 'name', desc: 'Skill to enable for this run' },
+  { name: 'resume', alias: 'r', type: 'string', valueName: 'id|index', desc: 'Resume a conversation by index or id' },
+  { name: 'continue', alias: 'c', type: 'boolean', desc: 'Resume the most recent conversation' },
+  { name: 'yes', alias: 'y', type: 'boolean', desc: 'Auto-approve all permission requests (one-shot only)' }
 ];
 
 const LOGO = [
@@ -42,33 +42,33 @@ const LOGO = [
 function showBanner() {
   for (const line of LOGO) process.stdout.write(`${COLORS.accent(line)}\n`);
   process.stdout.write(
-    `${COLORS.faint(`  v${VERSION} · 多协议 AI 编码助手 · 输入 /help 查看命令 · Ctrl+C 退出`)}\n\n`
+    `${COLORS.faint(`  v${VERSION} · multi-protocol AI coding assistant · /help for commands · Ctrl+C to exit`)}\n\n`
   );
 }
 
 function showHelp() {
-  process.stdout.write(`\n${COLORS.bold(`${BIN} — DgxayCode 命令行版`)} ${COLORS.faint(`v${VERSION}`)}\n\n`);
-  process.stdout.write(`${COLORS.faint('用法')}\n  ${BIN} [选项] [命令] [参数…]\n\n`);
-  process.stdout.write(`${COLORS.faint('常用命令')}\n`);
+  process.stdout.write(`\n${COLORS.bold(`${BIN} — DgxayCode CLI`)} ${COLORS.faint(`v${VERSION}`)}\n\n`);
+  process.stdout.write(`${COLORS.faint('Usage')}\n  ${BIN} [options] [command] [args...]\n\n`);
+  process.stdout.write(`${COLORS.faint('Quick start')}\n`);
   const rows = [
-    [`${BIN}`, '进入交互模式'],
-    [`${BIN} "帮我写一个 Python 脚本"`, '单次执行后退出'],
-    [`${BIN} run -p "..." -C ./project`, '指定工作空间单次执行'],
-    [`${BIN} config init`, '首次配置（填写供应商与 API Key）'],
-    [`${BIN} doctor`, '自检：配置、目录、模型连通性'],
-    [`${BIN} <命令> --help`, '查看某个命令的详细用法']
+    [`${BIN}`, 'Start the interactive shell'],
+    [`${BIN} "write a python script"`, 'Ask once and exit'],
+    [`${BIN} run -p "..." -C ./project`, 'One-shot with a workspace'],
+    [`${BIN} config init`, 'First-time setup (provider + API key)'],
+    [`${BIN} doctor`, 'Self-check: config, paths, connectivity'],
+    [`${BIN} <command> --help`, 'Show detailed usage for a command']
   ];
   const width = Math.max(...rows.map(([cmd]) => cmd.length));
   for (const [cmd, desc] of rows) {
     process.stdout.write(`  ${COLORS.cyan(cmd.padEnd(width))}  ${COLORS.faint(desc)}\n`);
   }
-  process.stdout.write(`\n${COLORS.faint('子命令')}\n`);
+  process.stdout.write(`\n${COLORS.faint('Commands')}\n`);
   const nameWidth = Math.max(...COMMANDS.map((cmd) => cmd.name.length));
   for (const cmd of COMMANDS) {
     const aliases = cmd.aliases?.length ? COLORS.faint(` (${cmd.aliases.join(', ')})`) : '';
     process.stdout.write(`  ${COLORS.accent(cmd.name.padEnd(nameWidth))}  ${cmd.summary || ''}${aliases}\n`);
   }
-  process.stdout.write(`\n${COLORS.faint('全局选项')}\n`);
+  process.stdout.write(`\n${COLORS.faint('Global options')}\n`);
   const flags = GLOBAL_OPTIONS.map((opt) => {
     const alias = opt.alias ? `-${opt.alias}, ` : '    ';
     const value = opt.type !== 'boolean' ? ` <${opt.valueName || opt.type}>` : '';
@@ -79,9 +79,9 @@ function showHelp() {
     process.stdout.write(`  ${COLORS.cyan(flag.padEnd(flagWidth))}  ${COLORS.faint(desc)}\n`);
   }
   process.stdout.write(
-    `\n${COLORS.faint('说明')} 配置与对话保存在 ${COLORS.faint('~/.dcb')}（可用 DGXAY_HOME 覆盖），可用 ${COLORS.faint(
+    `\n${COLORS.faint('Notes')} Configuration and conversations live in ${COLORS.faint('~/.dcb')} (override with DGXAY_HOME). Run ${COLORS.faint(
       `${BIN} config path`
-    )} 查看。\n\n`
+    )}  to see the paths.\n\n`
   );
 }
 
@@ -194,7 +194,7 @@ async function main(argv) {
     } catch (err) {
       if (err?.userError) {
         print.fail(err.message);
-        print.hint(`运行 ${BIN} ${command.name} --help 查看用法`);
+        print.hint(`Run ${BIN} ${command.name} --help for usage`);
         return 2;
       }
       print.fail(err?.message || String(err));
@@ -203,7 +203,7 @@ async function main(argv) {
     }
   }
 
-  // 不是子命令：整串参数当作单次运行的提示词；否则进入交互模式
+  // 不是子命令：整串参数当作单次运行的提示词；否则Start the interactive shell
   const prompt = parsed.positionals.join(' ').trim();
   const repl = require('./repl');
   try {

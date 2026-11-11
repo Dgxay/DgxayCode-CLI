@@ -22,7 +22,7 @@ function titleFrom(text) {
   const cleaned = String(text || '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!cleaned) return '新对话';
+  if (!cleaned) return 'New conversation';
   return cleaned.length > 26 ? `${cleaned.slice(0, 26)}…` : cleaned;
 }
 
@@ -30,7 +30,7 @@ function normalizeChat(chat) {
   if (!chat || typeof chat !== 'object') return null;
   return {
     id: String(chat.id || newId()),
-    title: String(chat.title || '新对话'),
+    title: String(chat.title || 'New conversation'),
     mode: chat.mode === 'work' ? 'work' : 'chat',
     skill: typeof chat.skill === 'string' ? chat.skill : '',
     createdAt: Number(chat.createdAt) || Date.now(),
@@ -64,7 +64,7 @@ function resolveChat(ref, chats = listChats()) {
   const prefixMatches = chats.filter((chat) => chat.id.startsWith(text));
   if (prefixMatches.length === 1) return prefixMatches[0];
   if (prefixMatches.length > 1) {
-    const error = new Error(`会话编号不唯一：「${text}」匹配到 ${prefixMatches.length} 个会话，请输入更长的 id`);
+    const error = new Error(`Ambiguous id "${text}" matches ${prefixMatches.length} conversations; use a longer id`);
     error.code = 'AMBIGUOUS';
     throw error;
   }
@@ -74,7 +74,7 @@ function resolveChat(ref, chats = listChats()) {
 /** 保存单段会话（插入或更新），返回保存后的会话 */
 function saveChat(chat) {
   const normalized = normalizeChat(chat);
-  if (!normalized) throw new Error('无效的会话');
+  if (!normalized) throw new Error('Invalid conversation');
   if (!normalized.messages.length) return normalized;
   const chats = listChats();
   const index = chats.findIndex((item) => item.id === normalized.id);
@@ -101,7 +101,7 @@ function clearChats() {
 function createChat(overrides = {}) {
   return {
     id: newId('chat'),
-    title: '新对话',
+    title: 'New conversation',
     mode: overrides.mode === 'work' ? 'work' : 'chat',
     skill: typeof overrides.skill === 'string' ? overrides.skill : '',
     createdAt: Date.now(),
@@ -117,13 +117,13 @@ function buildHistory(chat) {
   return (chat?.messages || [])
     .map((msg) => {
       if (!msg || !msg.role) return null;
-      if (msg.compressed) return { role: 'user', content: `[上下文摘要]\n${String(msg.content || '').replace(/^> 上下文已压缩[^\n]*\n+/, '')}` };
+      if (msg.compressed) return { role: 'user', content: `[Context summary]\n${String(msg.content || '').replace(/^> Context compressed[^\n]*\n+/, '')}` };
       if (msg.role === 'terminal') {
         const output = `${msg.output || ''}${msg.stderr ? `\n${msg.stderr}` : ''}`.slice(0, 4000);
         return {
           role: 'user',
           content: `[终端命令] ${msg.command}\n[输出]\n${output}\n[退出码] ${
-            msg.exitCode ?? (msg.status === 'running' ? '运行中' : '未知')
+            msg.exitCode ?? (msg.status === 'running' ? 'running' : 'unknown')
           }`
         };
       }

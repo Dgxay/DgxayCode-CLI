@@ -92,8 +92,8 @@ function normalizeEnv(raw) {
 function addServer(input) {
   const name = String(input?.name || '').trim();
   const command = String(input?.command || '').trim();
-  if (!name) throw new Error('MCP 名称不能为空');
-  if (!command) throw new Error('MCP 启动命令不能为空');
+  if (!name) throw new Error('MCP name cannot be empty');
+  if (!command) throw new Error('MCP command cannot be empty');
 
   const data = readConfig();
   const record = {
@@ -167,7 +167,7 @@ function pushLog(entry, stream, text) {
 function startServer(id) {
   const data = readConfig();
   const server = data.servers.find((item) => item.id === id) || data.servers.find((item) => item.name === id);
-  if (!server) throw new Error('找不到该 MCP server');
+  if (!server) throw new Error('MCP server not found');
 
   const existing = processes.get(server.id);
   if (existing?.status === 'running' && existing.child && !existing.child.killed) {
@@ -185,7 +185,7 @@ function startServer(id) {
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (err) {
-    throw new Error(`无法启动 MCP server：${err.message}`);
+    throw new Error(`Cannot start MCP server: ${err.message}`);
   }
 
   const entry = {
@@ -210,7 +210,7 @@ function startServer(id) {
     entry.status = wasStopping || code === 0 ? 'stopped' : 'error';
     entry.exitCode = code;
     if (!wasStopping && code !== 0 && code !== null) {
-      entry.error = `进程退出，code=${code}${signal ? `, signal=${signal}` : ''}`;
+      entry.error = `process exited, code=${code}${signal ? `, signal=${signal}` : ''}`;
     }
     notify({ type: 'status', id: server.id, status: entry.status, code, signal });
   });

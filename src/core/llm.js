@@ -20,7 +20,7 @@ function normalizeBaseUrl(baseUrl) {
 
 function endpointFor(baseUrl, path) {
   const base = normalizeBaseUrl(baseUrl);
-  if (!base) throw new Error('Base URL 不能为空');
+  if (!base) throw new Error('Base URL must not be empty');
   if (base.toLowerCase().endsWith(path.toLowerCase())) return base;
   // 已经带版本前缀的根地址（/v1、/v1beta/openai、/v1beta1 等）直接拼端点
   if (/\/v\d+[a-z0-9]*(?:\/.*)?$/i.test(base)) return `${base}${path}`;
@@ -95,7 +95,7 @@ function splitSystem(messages) {
 
 /** 通用 SSE 读取：每条 data 交给 onData；忽略注释与 [DONE] */
 async function consumeSSE(res, onData) {
-  if (!res.body) throw new Error('当前网络响应不支持流式读取');
+  if (!res.body) throw new Error('This network response does not support streaming');
   const reader = res.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
@@ -219,7 +219,7 @@ async function streamOpenAI(options) {
     } catch {
       return;
     }
-    if (json.error) throw new Error(json.error.message || '模型返回错误');
+    if (json.error) throw new Error(json.error.message || 'The model returned an error');
     const choice = json.choices?.[0];
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     const delta = choice?.delta || choice?.message || {};
@@ -365,7 +365,7 @@ async function streamAnthropic(options) {
 
   if (!stream) {
     const json = await res.json();
-    if (json.error) throw new Error(json.error.message || 'Anthropic 返回错误');
+    if (json.error) throw new Error(json.error.message || 'Anthropic returned an error');
     let content = '';
     let reasoning = '';
     const toolCalls = [];
@@ -452,7 +452,7 @@ async function streamAnthropic(options) {
         break;
       }
       case 'error':
-        throw new Error(event.error?.message || 'Anthropic 返回错误');
+        throw new Error(event.error?.message || 'Anthropic returned an error');
       default:
         break;
     }
@@ -573,7 +573,7 @@ async function streamResponses(options) {
 
   if (!stream) {
     const json = await res.json();
-    if (json.error) throw new Error(json.error.message || 'Responses 返回错误');
+    if (json.error) throw new Error(json.error.message || 'Responses returned an error');
     const { text, thought, calls } = collectOutput(json);
     if (text) onDelta?.(text);
     if (thought) onReasoning?.(thought);
@@ -655,9 +655,9 @@ async function streamResponses(options) {
         finishReason = event.response?.status || 'completed';
         break;
       case 'response.failed':
-        throw new Error(event.response?.error?.message || 'Responses 请求失败');
+        throw new Error(event.response?.error?.message || 'Responses request failed');
       case 'error':
-        throw new Error(event.error?.message || 'Responses 返回错误');
+        throw new Error(event.error?.message || 'Responses returned an error');
       default:
         break;
     }
@@ -676,8 +676,8 @@ async function streamResponses(options) {
 
 async function streamChat(options) {
   const protocol = PROTOCOLS.includes(options.protocol) ? options.protocol : 'openai';
-  if (!options.model) throw new Error('未选择模型');
-  if (!Array.isArray(options.messages) || !options.messages.length) throw new Error('消息不能为空');
+  if (!options.model) throw new Error('No model selected');
+  if (!Array.isArray(options.messages) || !options.messages.length) throw new Error('Messages cannot be empty');
   if (protocol === 'anthropic') return streamAnthropic(options);
   if (protocol === 'responses') return streamResponses(options);
   return streamOpenAI(options);

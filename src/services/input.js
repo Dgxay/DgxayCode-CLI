@@ -74,7 +74,7 @@ async function confirm(prompt, defaultYes = false) {
   if (answer === null) return false;
   const text = answer.trim().toLowerCase();
   if (!text) return defaultYes;
-  return text === 'y' || text === 'yes' || text === '是';
+  return text === 'y' || text === 'yes';
 }
 
 /** 单行状态提示（覆盖当前行，避免刷新时刷屏） */

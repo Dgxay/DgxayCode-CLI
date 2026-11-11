@@ -16,8 +16,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { COLORS, SIGN, termWidth, setColorMode, colorEnabled, displayWidth } = require('./ansi');
-const { LineEditor, createLineReader } = require('./editor');
+const { COLORS, SIGN, termWidth, setColorMode, colorEnabled, displayWidth, clearScreen, useUnicode } = require('./ansi');
+const { t } = require('./i18n');
+const { LineEditor, createLineReader, detectCapabilities, wrapDisplay } = require('./editor');
 const { parseArgs } = require('./args');
 const print = require('./print');
 const { askApproval } = require('./approval');
@@ -73,7 +74,7 @@ function createRuntime(options = {}) {
   if (options.workspace) {
     const resolved = path.resolve(options.workspace);
     if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) st.cwd = resolved;
-    else throw Object.assign(new Error(`工作空间不存在：${options.workspace}`), { userError: true });
+    else throw Object.assign(new Error(`Workspace not found: ${options.workspace}`), { userError: true });
   } else if (config.work?.workspace && fs.existsSync(config.work.workspace)) {
     st.cwd = config.work.workspace;
   } else {
@@ -82,7 +83,7 @@ function createRuntime(options = {}) {
 
   if (options.resume) {
     st.chat = sessions.getChat(String(options.resume));
-    if (!st.chat) throw Object.assign(new Error(`找不到会话：${options.resume}`), { userError: true });
+    if (!st.chat) throw Object.assign(new Error(`Conversation not found: ${options.resume}`), { userError: true });
   } else if (options.continueLast) {
     st.chat = sessions.listChats()[0] || null;
   }
@@ -94,21 +95,21 @@ function createRuntime(options = {}) {
 /* ------------------------------ 展示 ------------------------------ */
 
 function permissionBadge(st) {
-  const meta = settings.PERMISSIONS[st.runtime.permission] || settings.PERMISSIONS.normal;
-  const tone = st.runtime.permission === 'full' ? COLORS.red : st.runtime.permission === 'auto' ? COLORS.green : COLORS.faint;
-  return tone(meta.label);
+  const tone =
+    st.runtime.permission === 'full' ? COLORS.red : st.runtime.permission === 'auto' ? COLORS.green : COLORS.faint;
+  return tone(t(`perm_${st.runtime.permission}`));
 }
 
 function modeBadge(st) {
-  return st.runtime.mode === 'work' ? COLORS.accent('工作') : COLORS.faint('对话');
+  return st.runtime.mode === 'work' ? COLORS.accent(t('mode_work')) : COLORS.faint(t('mode_chat'));
 }
 
+/** 输入框上方的一行说明（模型 / 技能） */
 function promptFor(st) {
   const model = settings.activeModel(settings.readConfig());
-  const name = model?.name || '未选择模型';
-  const marker = st.runtime.mode === 'work' ? COLORS.accent('❯') : COLORS.faint('❯');
-  const skillChip = st.runtime.skill ? ` ${COLORS.accent(`⛭ ${st.runtime.skill}`)}` : '';
-  return `${marker} ${COLORS.faint(name)}${skillChip} `
+  const name = model?.name || t('no_model');
+  const skill = st.runtime.skill ? ` · ⛭ ${st.runtime.skill}` : '';
+  return `${name}${skill}`;
 }
 
 function showStatus(st, { withRing = true } = {}) {
@@ -119,12 +120,12 @@ function showStatus(st, { withRing = true } = {}) {
     modeBadge(st),
     permissionBadge(st),
     state.workspaceLabel(st.cwd),
-    `${chat ? chat.messages.filter((m) => m.role !== 'terminal').length : 0} 条消息`
+    `${chat ? chat.messages.filter((m) => m.role !== 'terminal').length : 0} ${t('messages')}`
   ];
   const left = parts.filter(Boolean).join(COLORS.faint(' · '));
   const right = withRing ? ringLine(info) : '';
   const width = termWidth();
-  const gap = Math.max(2, width - COLORS.dim('').length - stripLen(left) - stripLen(right) - 2);
+  const gap = Math.max(2, width - stripLen(left) - stripLen(right) - 2);
   process.stdout.write(`\n${left}${' '.repeat(gap)}${right}\n\n`);
 }
 
@@ -138,20 +139,24 @@ function showWelcome(st) {
   const model = settings.activeModel(config);
   const chat = st.chat;
   if (chat && chat.messages.length) {
-    print.hint(`已恢复会话「${chat.title}」（${chat.messages.filter((m) => m.role !== 'terminal').length} 条消息）`);
+    print.hint(
+      `${t('restored')} "${chat.title}" (${chat.messages.filter((m) => m.role !== 'terminal').length} ${t('messages')})`
+    );
   }
   print.keyValue([
-    { label: '模型', value: model ? `${model.providerName} / ${model.name}` : COLORS.yellow('未配置，运行 dgxay config init') },
-    { label: '工作空间', value: st.cwd },
-    { label: '权限', value: `${settings.PERMISSIONS[st.runtime.permission].label} · ${settings.PERMISSIONS[st.runtime.permission].desc}` },
-    { label: '模式', value: st.runtime.mode === 'work' ? '工作模式' : '对话模式' }
+    {
+      label: t('status_model'),
+      value: model ? `${model.providerName} / ${model.name}` : COLORS.yellow(t('no_model'))
+    },
+    { label: t('status_workspace'), value: st.cwd },
+    {
+      label: t('status_permission'),
+      value: `${t(`perm_${st.runtime.permission}`)} · ${settings.PERMISSIONS[st.runtime.permission].desc}`
+    },
+    { label: t('status_mode'), value: st.runtime.mode === 'work' ? t('mode_work') : t('mode_chat') }
   ]);
-  if (!model) {
-    print.blank();
-    print.warn('还没有可用模型，请输入 /config 或退出后运行 dgxay config init');
-  }
   print.blank();
-  print.hint('提示：/ 查看命令 · ! 执行终端命令 · \\ 结尾换行 · Ctrl+C 中断 · Ctrl+D 退出');
+  print.hint(t('hint_start'));
   print.blank();
   void chat;
 }
@@ -174,7 +179,7 @@ function persist(st) {
   if (!st.chat) return;
   const chat = st.chat;
   if (!chat.messages.length) return;
-  if (!chat.title || chat.title === '新对话') {
+  if (!chat.title || chat.title === 'New conversation') {
     const firstUser = chat.messages.find((m) => m.role === 'user' && m.content);
     if (firstUser) chat.title = sessions.titleFrom(firstUser.content);
   }
@@ -190,6 +195,33 @@ function historyForAgent(st) {
   return sessions.trimHistory(sessions.buildHistory(st.chat), HISTORY_LIMIT);
 }
 
+/**
+ * 回显用户消息：与输入框同样的边框样式，让对话记录看起来是「框」。
+ */
+function printUserMessage(text) {
+  const width = Math.max(20, Math.min(termWidth() - 1, 100));
+  const inner = width - 2;
+  const unicode = useUnicode();
+  const box = unicode
+    ? { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│' }
+    : { tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|' };
+
+  const lines = [];
+  for (const raw of String(text).split('\n')) {
+    for (const piece of wrapDisplay(raw, Math.max(4, inner - 2))) lines.push(piece);
+  }
+  if (!lines.length) lines.push('');
+
+  const label = ` ${t('you')} `;
+  const topFill = Math.max(0, width - 2 - displayWidth(label));
+  process.stdout.write(`\n${COLORS.accent(box.tl + label + box.h.repeat(topFill) + box.tr)}\n`);
+  for (const line of lines) {
+    const pad = Math.max(0, inner - displayWidth(line) - 1);
+    process.stdout.write(`${COLORS.accent(box.v)} ${line}${' '.repeat(pad)}${COLORS.accent(box.v)}\n`);
+  }
+  process.stdout.write(`${COLORS.accent(box.bl + box.h.repeat(width - 2) + box.br)}\n`);
+}
+
 /* ------------------------------ 对话 ------------------------------ */
 
 async function sendMessage(st, editor, text, options = {}) {
@@ -202,7 +234,7 @@ async function sendMessage(st, editor, text, options = {}) {
     activeModelId: st.runtime.modelId || config.activeModelId
   });
   if (!model) {
-    print.warn('还没有可用模型：先运行 dgxay config init 配置供应商');
+    print.warn(t('no_model'));
     return 1;
   }
 
@@ -211,6 +243,12 @@ async function sendMessage(st, editor, text, options = {}) {
   chat.skill = st.runtime.skill;
   pushMessage(chat, { role: 'user', content: promptText, mode: st.runtime.mode, permission: st.runtime.permission });
   persist(st);
+  // 记住上一条提示词，供输入框按 ↑ 回填
+  st.lastUserPrompt = promptText;
+  if (editor) editor.lastUserPrompt = promptText;
+
+  // 把用户消息按输入框的样式回显一遍，形成对话记录
+  printUserMessage(promptText);
 
   const jsonMode = String(options.output || 'text') === 'json';
   const renderer = new StreamRenderer({
@@ -226,7 +264,7 @@ async function sendMessage(st, editor, text, options = {}) {
     if (!st.streaming || st.abortRequested) return false;
     st.abortRequested = true;
     controller.abort();
-    process.stdout.write(`${COLORS.yellow(`${SIGN.bullet} 正在中断…`)}\n`);
+    process.stdout.write(`${COLORS.yellow(`${SIGN.bullet} ${t('interrupted')}`)}\n`);
     return true;
   });
 
@@ -275,7 +313,7 @@ async function sendMessage(st, editor, text, options = {}) {
     elapsedMs: Date.now() - startedAt
   };
   pushMessage(chat, assistantMessage);
-  if (chat.title === '新对话') chat.title = sessions.titleFrom(promptText);
+  if (chat.title === 'New conversation') chat.title = sessions.titleFrom(promptText);
   persist(st);
   st.lastResponse = result;
   updateBusState(st);
@@ -289,17 +327,17 @@ async function sendMessage(st, editor, text, options = {}) {
 async function runTerminal(st, editor, rawCommand) {
   const command = String(rawCommand || '').trim();
   if (!command) {
-    print.warn('请输入要执行的终端命令');
+    print.warn('Enter a command first');
     return 1;
   }
   if (st.terminalBusy) {
-    print.warn('已有命令正在执行');
+    print.warn('A command is already running');
     return 1;
   }
   const config = settings.readConfig();
   const permission = st.runtime.permission;
   if (permission === 'none') {
-    print.warn('无权限模式禁止执行终端命令');
+    print.warn('No permission to run shell commands');
     return 1;
   }
 
@@ -307,9 +345,9 @@ async function runTerminal(st, editor, rawCommand) {
     editor.suspend();
     const allowed = await askApproval(
       {
-        title: 'AI 请求执行终端命令',
+        title: t('approval_terminal'),
         operation: 'run_terminal',
-        detail: `命令：${command}`,
+        detail: `Command: ${command}`,
         command,
         workspace: st.cwd,
         review: '',
@@ -352,14 +390,14 @@ async function runTerminal(st, editor, rawCommand) {
   message.exitCode = Number.isInteger(result.code) ? result.code : null;
   message.status = result.aborted ? 'done' : result.code === 0 ? 'done' : 'error';
   if (result.error) message.error = result.error;
-  if (chat.title === '新对话') chat.title = sessions.titleFrom(`终端 · ${command}`);
+  if (chat.title === 'New conversation') chat.title = sessions.titleFrom(`Terminal · ${command}`);
   chat.updatedAt = Date.now();
   persist(st);
 
   const code = message.exitCode;
-  if (result.aborted) print.hint('已停止');
-  else if (code === 0) process.stdout.write(COLORS.green(`  ${SIGN.ok} 完成\n`));
-  else process.stdout.write(COLORS.red(`  ${SIGN.fail} 退出码 ${code ?? '未知'}\n`));
+  if (result.aborted) print.hint(t('stopped'));
+  else if (code === 0) process.stdout.write(COLORS.green(`  ${SIGN.ok} done\n`));
+  else process.stdout.write(COLORS.red(`  ${SIGN.fail} ${t('exit_code')} ${code ?? '?'}\n`));
   editor.resume();
   return code === 0 ? 0 : 1;
 }
@@ -394,7 +432,7 @@ async function handleSlash(st, editor, input) {
   const command = findCommand(head);
 
   if (!command) {
-    print.warn(`未知命令：${head}，输入 /help 查看全部命令`);
+    print.warn(`Unknown command: ${head}. Type /help to list commands`);
     return;
   }
 
@@ -406,7 +444,7 @@ async function handleSlash(st, editor, input) {
       persist(st);
       st.chat = sessions.createChat({ mode: st.runtime.mode, skill: st.runtime.skill });
       updateBusState(st);
-      print.ok('已开始新对话');
+      print.ok(t('new_chat'));
       return;
     }
     case '/list':
@@ -415,7 +453,7 @@ async function handleSlash(st, editor, input) {
     case '/resume': {
       const chats = sessions.listChats();
       if (!chats.length) {
-        print.warn('还没有历史对话');
+        print.warn(t('no_chats'));
         return;
       }
       let target;
@@ -426,13 +464,13 @@ async function handleSlash(st, editor, input) {
         return;
       }
       if (!target) {
-        print.fail(`找不到会话：${rest}`);
+        print.fail(`Conversation not found: ${rest}`);
         return;
       }
       persist(st);
       st.chat = target;
       updateBusState(st);
-      print.ok(`已恢复「${target.title}」（${target.messages.filter((m) => m.role !== 'terminal').length} 条消息）`);
+      print.ok(`Restored "${target.title}" (${target.messages.filter((m) => m.role !== 'terminal').length} messages)`);
       printThread(st);
       return;
     }
@@ -440,27 +478,27 @@ async function handleSlash(st, editor, input) {
       const chats = sessions.listChats();
       const target = rest ? sessions.resolveChat(rest, chats) : st.chat;
       if (!target) {
-        print.fail(`找不到会话：${rest}`);
+        print.fail(`Conversation not found: ${rest}`);
         return;
       }
       sessions.deleteChat(target.id);
       if (st.chat?.id === target.id) st.chat = sessions.listChats()[0] || null;
       updateBusState(st);
-      print.ok(`已删除「${target.title}」`);
+      print.ok(`Deleted "${target.title}"`);
       return;
     }
     case '/rename': {
       if (!st.chat) {
-        print.warn('当前没有会话');
+        print.warn('No active conversation');
         return;
       }
       if (!rest) {
-        print.fail('用法：/rename <新标题>');
+        print.fail('Usage: /rename <title>');
         return;
       }
       st.chat.title = rest;
       persist(st);
-      print.ok(`已重命名为「${rest}」`);
+      print.ok(`Renamed to "${rest}"`);
       return;
     }
     case '/compress':
@@ -512,13 +550,13 @@ async function handleSlash(st, editor, input) {
       st.exitRequested = true;
       return;
     default:
-      print.warn(`命令尚未实现：${command.name}`);
+      print.warn(`Not implemented yet: ${command.name}`);
   }
 }
 
 function showHelp() {
   print.blank();
-  print.heading('斜杠命令');
+  print.heading(t('menu_title'));
   // 命令名列按显示宽度对齐（中文别名占两格，不能用 padEnd）
   const nameWidth = Math.max(...SLASH_COMMANDS.map((cmd) => displayWidth(cmd.name))) + 2;
   for (const cmd of SLASH_COMMANDS) {
@@ -527,20 +565,20 @@ function showHelp() {
     if (cmd.usage !== cmd.name) print.write(`  ${' '.repeat(nameWidth)}${COLORS.faint(cmd.usage)}`);
   }
   print.blank();
-  print.heading('输入约定');
+  print.heading('Keys');
   const tips = [
-    ['! 命令', '执行终端命令，输出进入对话上下文（如 !git status）'],
-    ['\\ 结尾', '续行输入多行消息'],
-    ['Tab', '在 / 命令后循环选择补全项'],
-    ['Ctrl+C', '生成中中断；空闲时退出；输入框有内容时清空'],
-    ['Ctrl+D', '退出'],
-    ['↑ / ↓', '浏览历史输入']
+    ['! cmd', 'Run a shell command; output joins the context (e.g. !git status)'],
+    ['\\', 'Continue on the next line (multi-line input)'],
+    ['Tab', 'Open / cycle the completion menu'],
+    ['Ctrl+C', 'Interrupt generation · exit when idle · clear input'],
+    ['Ctrl+D', 'Exit'],
+    ['↑ / ↓', 'Recalls the previous prompt']
   ];
   for (const [key, desc] of tips) {
     print.write(`  ${COLORS.cyan(key)}  ${desc}`);
   }
   print.blank();
-  print.hint(`其他操作也可以直接用子命令：${BIN} provider list / ${BIN} mcp start ...`);
+  print.hint(`Everything is also available as a subcommand: ${BIN} provider list · ${BIN} mcp start`);
   print.blank();
 }
 
@@ -548,10 +586,10 @@ function listChats(st) {
   const chats = sessions.listChats();
   print.blank();
   if (!chats.length) {
-    print.hint('还没有历史对话');
+    print.hint(t('no_chats'));
     return;
   }
-  print.heading(`历史对话（${chats.length}）`);
+  print.heading(`Conversations (${chats.length}）`);
   const rows = chats.map((chat, index) => {
     const messages = chat.messages.filter((m) => m.role !== 'terminal');
     const last = messages[messages.length - 1];
@@ -562,10 +600,10 @@ function listChats(st) {
     return [
       chat.id === st.chat?.id ? COLORS.accent('*') : ' ',
       String(index + 1),
-      chat.title || '新对话',
+      chat.title || 'New conversation',
       String(messages.length),
       stamp,
-      chat.mode === 'work' ? '工作' : '对话',
+      chat.mode === 'work' ? t('mode_work') : t('mode_chat'),
       last?.content ? last.content.slice(0, 40) : ''
     ];
   });
@@ -573,16 +611,16 @@ function listChats(st) {
     [
       { title: '', max: 1 },
       { title: '#', max: 3 },
-      { title: '标题', max: 30 },
-      { title: '消息', max: 4 },
-      { title: '更新时间', max: 12 },
-      { title: '模式', max: 4 },
-      { title: '最后内容', max: 40 }
+      { title: 'Title', max: 30 },
+      { title: 'Msgs', max: 4 },
+      { title: 'Updated', max: 12 },
+      { title: 'Mode', max: 4 },
+      { title: 'Last message', max: 40 }
     ],
     rows
   );
   print.blank();
-  print.hint('/resume <序号> 恢复 · /delete <序号> 删除');
+  print.hint('/resume <n> restore · /delete <n> remove');
 }
 
 function printThread(st) {
@@ -590,7 +628,7 @@ function printThread(st) {
   if (!chat?.messages?.length) return;
   for (const message of chat.messages) {
     if (message.role === 'user') {
-      process.stdout.write(`\n${COLORS.faint('› 你')}\n${message.content}\n`);
+      process.stdout.write(`\n${COLORS.faint('› You')}\n${message.content}\n`);
     } else if (message.role === 'assistant') {
       process.stdout.write(`\n${COLORS.accent('•')} ${COLORS.bold('DgxayCode')}\n`);
       if (message.content) process.stdout.write(require('./ansi').renderMarkdown(message.content, { width: termWidth() }));
@@ -606,23 +644,23 @@ function printThread(st) {
 
 async function compress(st, editor) {
   if (st.streaming) {
-    print.warn('请等待当前回复结束');
+    print.warn(t('wait_current'));
     return;
   }
   const chat = st.chat;
   if (!chat?.messages?.length) {
-    print.warn('当前对话还没有可压缩的内容');
+    print.warn(t('compress_nothing'));
     return;
   }
   const config = settings.readConfig();
   const model = settings.activeModel(config);
   if (!model) {
-    print.warn('请先配置模型');
+    print.warn(t('no_model'));
     return;
   }
   const before = sessions.estimateChatTokens(chat);
   editor.suspend();
-  process.stdout.write(`${COLORS.faint(`${SIGN.run} 正在压缩上下文…`)}`);
+  process.stdout.write(`${COLORS.faint(`${SIGN.run} Compressing context…`)}`);
   try {
     const result = await compressMessages({
       config,
@@ -630,19 +668,19 @@ async function compress(st, editor) {
       modelId: st.runtime.modelId || config.activeModelId,
       messages: sessions.buildHistory(chat)
     });
-    if (!result.summary) throw new Error('模型没有返回摘要');
+    if (!result.summary) throw new Error('the model returned no summary');
     chat.messages = [
-      { role: 'assistant', content: `> 上下文已压缩，仅保留重要信息。\n\n${result.summary}`, ts: Date.now(), compressed: true }
+      { role: 'assistant', content: `> Context compressed; only key information kept.\n\n${result.summary}`, ts: Date.now(), compressed: true }
     ];
     chat.updatedAt = Date.now();
     persist(st);
     const after = sessions.estimateChatTokens(chat);
     process.stdout.write('\r\x1b[2K');
-    print.ok(`上下文已压缩：${sessions.formatTokens(before)} → ${sessions.formatTokens(after)} tokens（估算）`);
+    print.ok(`Context compressed: ${sessions.formatTokens(before)} → ${sessions.formatTokens(after)} tokens (estimated)`);
     process.stdout.write(`\n${require('./ansi').renderMarkdown(result.summary, { width: termWidth() })}\n`);
   } catch (err) {
     process.stdout.write('\r\x1b[2K');
-    print.fail(err.message || '压缩失败');
+    print.fail(err.message || t('compress_failed'));
   } finally {
     editor.resume();
   }
@@ -651,30 +689,30 @@ async function compress(st, editor) {
 async function handleSkillCommand(st, rest) {
   if (!rest) {
     print.blank();
-    print.heading(`技能（${settings.homeRelative(cfg.SKILLS_DIR)}）`);
+    print.heading(`Skills (${settings.homeRelative(cfg.SKILLS_DIR)}）`);
     const list = skills.listSkills();
     if (!list.length) {
-      print.hint('  还没有技能。在 ~/.dcb/skills 下放一个 name.md 或 <目录>/SKILL.md');
+      print.hint('  No skills yet. Put a name.md or <dir>/SKILL.md into ~/.dcb/skills');
       print.blank();
       return;
     }
     const rows = list.map((skill, index) => [
       String(index + 1),
       skill.name,
-      st.runtime.skill === skill.name ? COLORS.green('已启用') : '',
+      st.runtime.skill === skill.name ? COLORS.green('enabled') : '',
       skill.description
     ]);
     print.table(
       [
         { title: '#', max: 3 },
-        { title: '名称', max: 22 },
-        { title: '状态', max: 8 },
-        { title: '描述', max: 60 }
+        { title: 'Name', max: 22 },
+        { title: 'Status', max: 8 },
+        { title: 'Description', max: 60 }
       ],
       rows
     );
     print.blank();
-    print.hint('/skill off 关闭 · /skill <名称> [提示词] 启用（本次对话）');
+    print.hint('/skill off to disable · /skill <name> [prompt] to enable for this conversation');
     print.blank();
     return;
   }
@@ -682,7 +720,7 @@ async function handleSkillCommand(st, rest) {
     st.runtime.skill = '';
     if (st.chat) st.chat.skill = '';
     updateBusState(st);
-    print.ok('已关闭技能');
+    print.ok(t('skills_off'));
     return;
   }
   const list = skills.listSkills();
@@ -690,13 +728,13 @@ async function handleSkillCommand(st, rest) {
     .filter((item) => rest === item.name || rest.startsWith(`${item.name} `))
     .sort((a, b) => b.name.length - a.name.length)[0];
   if (!picked) {
-    print.warn(`未找到技能：${rest}。输入 /skill 查看列表`);
+    print.warn(`Skill not found: ${rest}. Type /skill to list them`);
     return;
   }
   st.runtime.skill = picked.name;
   if (st.chat) st.chat.skill = picked.name;
   updateBusState(st);
-  print.ok(`已在本次对话启用技能：${picked.name}`);
+  print.ok(`Skill enabled for this conversation: ${picked.name}`);
   const prompt = rest.slice(picked.name.length).trim();
   if (prompt) return prompt;
   return undefined;
@@ -707,13 +745,13 @@ function handleModelCommand(st, rest) {
   const provider = settings.findProvider(st.runtime.providerId) || settings.activeProvider(config);
   const models = provider?.models || [];
   if (!models.length) {
-    print.warn('当前供应商没有模型，先运行 dgxay provider add');
+    print.warn('This provider has no models. Run dgxay provider add');
     return;
   }
   const current = models.find((m) => m.id === st.runtime.modelId) || models[0];
   if (!rest) {
     print.blank();
-    print.heading(`模型（${provider.name}）`);
+    print.heading(`Models (${provider.name}）`);
     models.forEach((model, index) => {
       const active = model.id === current?.id;
       print.write(
@@ -725,7 +763,7 @@ function handleModelCommand(st, rest) {
       );
     });
     print.blank();
-    print.hint('/model <序号|ID> 切换 · 该选择会写入配置');
+    print.hint('/model <n|id> to switch · saved to config');
     print.blank();
     return;
   }
@@ -735,39 +773,39 @@ function handleModelCommand(st, rest) {
     models.find((m) => m.id === rest) ||
     models.find((m) => m.id.includes(rest));
   if (!target) {
-    print.fail(`找不到模型：${rest}`);
+    print.fail(`Model not found: ${rest}`);
     return;
   }
   settings.setActiveModel(provider.id, target.id);
   st.runtime.modelId = target.id;
   st.runtime.providerId = provider.id;
   updateBusState(st);
-  print.ok(`已切换到 ${target.name || target.id}`);
+  print.ok(`Switched to ${target.name || target.id}`);
 }
 
 function handleProviderCommand(st, rest) {
   const config = settings.readConfig();
   const providers = config.providers || [];
   if (!providers.length) {
-    print.warn('还没有供应商，运行 dgxay config init');
+    print.warn('No providers yet. Run dgxay config init');
     return;
   }
   const current = settings.findProvider(st.runtime.providerId) || settings.activeProvider(config);
   if (!rest) {
     print.blank();
-    print.heading('供应商');
+    print.heading(t('provider_list_title'));
     providers.forEach((provider, index) => {
       const active = provider.id === current?.id;
       print.write(
         `  ${active ? COLORS.accent('❯') : ' '} ${COLORS.faint(String(index + 1).padStart(2))}. ${
           active ? COLORS.accent(provider.name) : provider.name
         } ${COLORS.faint(settings.PROTOCOL_META[provider.protocol || 'openai'].short)} ${COLORS.faint(
-          `${(provider.models || []).length} 个模型`
+          `${(provider.models || []).length} models`
         )}`
       );
     });
     print.blank();
-    print.hint('/provider <序号|名称> 切换');
+    print.hint('/provider <n|name> to switch');
     print.blank();
     return;
   }
@@ -776,62 +814,62 @@ function handleProviderCommand(st, rest) {
     (Number.isInteger(index) && index >= 1 && index <= providers.length ? providers[index - 1] : null) ||
     settings.findProvider(rest);
   if (!target) {
-    print.fail(`找不到供应商：${rest}`);
+    print.fail(`Provider not found: ${rest}`);
     return;
   }
   const model = target.models?.[0];
   if (!model) {
-    print.fail(`供应商 ${target.name} 没有模型`);
+    print.fail(`Provider ${target.name} has no models`);
     return;
   }
   settings.saveConfig({ activeProviderId: target.id, activeModelId: model.id });
   st.runtime.providerId = target.id;
   st.runtime.modelId = model.id;
   updateBusState(st);
-  print.ok(`已切换到 ${target.name} / ${model.name || model.id}`);
+  print.ok(`Switched to ${target.name} / ${model.name || model.id}`);
 }
 
 function handleModeCommand(st, rest) {
-  const next = rest ? (rest === 'work' || rest === '工作' ? 'work' : 'chat') : st.runtime.mode === 'work' ? 'chat' : 'work';
+  const next = rest ? (rest === 'work' ? 'work' : 'chat') : st.runtime.mode === 'work' ? 'chat' : 'work';
   st.runtime.mode = next;
   if (st.chat) st.chat.mode = next;
   updateBusState(st);
-  print.ok(next === 'work' ? '已切换到工作模式' : '已切换到对话模式');
-  if (next === 'work' && !st.cwd) print.hint('当前没有工作空间，请用 /cd <目录> 选择');
+  print.ok(next === 'work' ? `${t('mode_set')}: ${t('mode_work')}` : `${t('mode_set')}: ${t('mode_chat')}`);
+  if (next === 'work' && !st.cwd) print.hint('No workspace selected. Use /cd <dir>');
 }
 
 function handlePermissionCommand(st, rest) {
   const config = settings.readConfig();
   if (!rest) {
     print.blank();
-    print.heading('权限');
+    print.heading(t('perms_title'));
     const available = settings.availablePermissions(config);
     Object.entries(settings.PERMISSIONS).forEach(([key, meta]) => {
       const usable = available.includes(key);
       const active = st.runtime.permission === key;
       print.write(
         `  ${active ? COLORS.accent('❯') : ' '} ${COLORS.faint(key.padEnd(8))} ${
-          usable ? meta.label : COLORS.faint(`${meta.label}（不可用）`)
+          usable ? meta.label : COLORS.faint(`${meta.label} (unavailable)`)
         }  ${COLORS.faint(meta.desc)}`
       );
     });
-    if (!available.includes('auto')) print.hint('自动审查需要供应商配置有效的审查模型');
+    if (!available.includes('auto')) print.hint('Auto review needs a valid review model');
     print.blank();
     return;
   }
   if (!settings.PERMISSIONS[rest]) {
-    print.fail('权限只能是 none / normal / auto / full');
+    print.fail('Level must be none / normal / auto / full');
     return;
   }
   if (rest === 'auto' && !settings.hasReviewModel(config)) {
-    print.fail('自动审查不可用：当前或默认供应商没有配置有效的审查模型');
+    print.fail(t('perm_auto_unavailable'));
     return;
   }
   st.runtime.permission = rest;
   settings.setPermission(rest);
   updateBusState(st);
-  print.ok(`权限已切换为：${settings.PERMISSIONS[rest].label}`);
-  if (rest === 'full') print.warn('完全权限下 AI 可以直接执行任意命令、读写任意文件，请确认这是你想要的');
+  print.ok(`Permission set to: ${settings.PERMISSIONS[rest].label}`);
+  if (rest === 'full') print.warn(t('perm_full_warning'));
 }
 
 function handleCd(st, rest) {
@@ -844,17 +882,17 @@ function handleCd(st, rest) {
   try {
     stat = fs.statSync(target);
   } catch {
-    print.fail(`目录不存在：${target}`);
+    print.fail(`Directory not found: ${target}`);
     return;
   }
   if (!stat.isDirectory()) {
-    print.fail(`不是文件夹：${target}`);
+    print.fail(`Not a directory: ${target}`);
     return;
   }
   st.cwd = target;
   settings.setWorkspace(target);
   updateBusState(st);
-  print.ok(`工作空间：${target}`);
+  print.ok(`Workspace: ${target}`);
 }
 
 function handleLs(st, rest) {
@@ -863,7 +901,7 @@ function handleLs(st, rest) {
   try {
     entries = fs.readdirSync(target, { withFileTypes: true });
   } catch (err) {
-    print.fail(`无法读取 ${target}：${err.code || err.message}`);
+    print.fail(`Cannot read ${target}：${err.code || err.message}`);
     return;
   }
   entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
@@ -891,7 +929,7 @@ async function handleMcpCommand(st, rest) {
     const list = mcp.listServers();
     print.blank();
     if (!list.length) {
-      print.hint(`还没有 MCP server，用 /mcp add 或 ${BIN} mcp add 添加`);
+      print.hint(`No MCP servers. Use /mcp add or ${BIN} mcp add`);
       print.blank();
       return;
     }
@@ -899,46 +937,46 @@ async function handleMcpCommand(st, rest) {
     const rows = list.map((server, index) => [
       String(index + 1),
       server.name,
-      server.status === 'running' ? COLORS.green('运行中') : server.status === 'error' ? COLORS.red('异常') : '已停止',
+      server.status === 'running' ? COLORS.green('running') : server.status === 'error' ? COLORS.red('error') : 'stopped',
       server.pid ? String(server.pid) : '',
       `${server.command} ${(server.args || []).join(' ')}`
     ]);
     print.table(
       [
         { title: '#', max: 3 },
-        { title: '名称', max: 18 },
-        { title: '状态', max: 8 },
+        { title: 'Name', max: 18 },
+        { title: 'Status', max: 8 },
         { title: 'PID', max: 8 },
-        { title: '命令', max: 50 }
+        { title: 'Command', max: 50 }
       ],
       rows
     );
     print.blank();
-    print.hint('/mcp start <名称> · /mcp stop <名称> · /mcp logs <名称> · /mcp add name command args');
+    print.hint('/mcp start <name> · /mcp stop <name> · /mcp logs <name> · /mcp add name command args');
     print.blank();
     return;
   }
   const server = mcp.findServer(arg);
   if (action === 'start') {
-    if (!server) return print.fail(`找不到 MCP：${arg}`);
+    if (!server) return print.fail(`MCP not found: ${arg}`);
     try {
       const result = mcp.startServer(server.id);
-      print.ok(`已启动 ${server.name}（pid ${result.pid}）`);
+      print.ok(`Started ${server.name}（pid ${result.pid}）`);
     } catch (err) {
       print.fail(err.message);
     }
     return;
   }
   if (action === 'stop') {
-    if (!server) return print.fail(`找不到 MCP：${arg}`);
+    if (!server) return print.fail(`MCP not found: ${arg}`);
     mcp.stopServer(server.id);
-    print.ok(`已停止 ${server.name}`);
+    print.ok(`Stopped ${server.name}`);
     return;
   }
   if (action === 'logs') {
-    if (!server) return print.fail(`找不到 MCP：${arg}`);
+    if (!server) return print.fail(`MCP not found: ${arg}`);
     const logs = mcp.statusOf(server.id).logs || [];
-    if (!logs.length) return print.hint('暂无日志');
+    if (!logs.length) return print.hint('No logs yet');
     for (const entry of logs) {
       print.write(`${entry.stream === 'stderr' ? COLORS.red(entry.text) : entry.text}`);
     }
@@ -946,33 +984,33 @@ async function handleMcpCommand(st, rest) {
   }
   if (action === 'add') {
     const [name, command, ...args] = others;
-    if (!name || !command) return print.fail('用法：/mcp add <名称> <命令> [参数…]');
+    if (!name || !command) return print.fail('Usage: /mcp add <name> <command> [args...]');
     const created = mcp.addServer({ name, command, args });
-    print.ok(`已添加 MCP「${created.name}」，用 /mcp start ${created.name} 启动`);
+    print.ok(`Added MCP "${created.name}" — start it with /mcp start ${created.name}`);
     return;
   }
   if (action === 'rm' || action === 'remove') {
-    if (!server) return print.fail(`找不到 MCP：${arg}`);
+    if (!server) return print.fail(`MCP not found: ${arg}`);
     mcp.removeServer(server.id);
-    print.ok(`已删除 ${server.name}`);
+    print.ok(`Deleted ${server.name}`);
     return;
   }
-  print.fail(`未知的 /mcp 子命令：${action}`);
+  print.fail(`Unknown /mcp action: ${action}`);
 }
 
 function handleTheme(rest) {
   const mode = String(rest || '').toLowerCase();
   if (mode === 'on' || mode === 'color') {
     setColorMode('ansi256');
-    print.ok('已开启彩色输出');
+    print.ok('Color output on');
     return;
   }
   if (mode === 'off' || mode === 'plain') {
     setColorMode('none');
-    print.ok('已关闭彩色输出');
+    print.ok('Color output off');
     return;
   }
-  print.write(`彩色输出：${colorEnabled() ? '开启' : '关闭'}（/theme on | off）`);
+  print.write(`Color output: ${colorEnabled() ? 'on' : 'off'} (/theme on | off)`);
 }
 
 /* ------------------------------ 输入分发 ------------------------------ */
@@ -1022,7 +1060,7 @@ async function singleShot(options) {
   if (options.output) argv.push('--output', options.output);
   if (options.yes) argv.push('--yes');
   if (!prompt) {
-    print.fail('单次运行需要提示词');
+    print.fail('A prompt is required');
     return 2;
   }
   return require('../commands/run').run({ argv, runtime: options });
@@ -1039,9 +1077,9 @@ async function startInteractive(options) {
   const config = settings.readConfig();
   if (!config.providers?.length) {
     // 还没有任何供应商：交互终端里直接进入配置引导
-    print.warn('还没有配置任何供应商');
+    print.warn('No provider configured yet');
     if (!process.stdin.isTTY) {
-      print.hint('运行 dgxay config init 完成首次配置');
+      print.hint('Run dgxay config init to set one up');
       return 1;
     }
     const result = await require('../commands/config').run({
@@ -1052,12 +1090,29 @@ async function startInteractive(options) {
   }
 
   const st = createRuntime(options);
-  const editor = process.stdin.isTTY && process.stdout.isTTY
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+
+  // 启动时先清屏，再渲染界面（管道模式不清屏，保持输出干净）
+  if (interactive) {
+    clearScreen(process.stdout);
+    process.stdout.write('\x1b[3J');
+  }
+
+  // 历史：优先把当前会话里用户说过的话填进去，↑ 可以直接回填
+  const previousPrompts = (st.chat?.messages || [])
+    .filter((message) => message.role === 'user' && typeof message.content === 'string' && message.content.trim())
+    .map((message) => message.content.trim());
+  const lastUserPrompt = previousPrompts[previousPrompts.length - 1] || '';
+
+  const editor = interactive
     ? new LineEditor({
         prompt: promptFor(st),
-        continuationPrompt: COLORS.faint('  … '),
+        placeholder: t('box_placeholder'),
         completer,
-        multiline: true
+        multiline: true,
+        capabilities: detectCapabilities(process.stdout),
+        history: previousPrompts,
+        lastUserPrompt
       })
     : createLineReader(process.stdin);
 
@@ -1113,7 +1168,7 @@ async function startInteractive(options) {
     if (st.streaming && !st.abortRequested) {
       st.abortRequested = true;
       st.requestController?.abort();
-      process.stdout.write(`${COLORS.yellow(`${SIGN.bullet} 正在中断…`)}\n`);
+      process.stdout.write(`${COLORS.yellow(`${SIGN.bullet} ${t('interrupted')}`)}\n`);
       return true;
     }
     if (st.terminalBusy) return true;
@@ -1122,7 +1177,16 @@ async function startInteractive(options) {
 
   try {
     while (!st.exitRequested) {
-      editor.prompt = promptFor(st);
+      // 输入框上方的一行说明：模型 / 技能
+      if (interactive) editor.prompt = promptFor(st);
+      // ↑ 回填：始终指向最近一条用户提示词
+      if (interactive) {
+        const prompts = (st.chat?.messages || []).filter(
+          (message) => message.role === 'user' && typeof message.content === 'string' && message.content.trim()
+        );
+        editor.lastUserPrompt = prompts.length ? prompts[prompts.length - 1].content.trim() : '';
+        editor.history = prompts.map((message) => message.content.trim());
+      }
       const answer = await editor.question();
       if (answer.type === 'eof' || answer.type === 'cancel') break;
       try {
@@ -1150,7 +1214,7 @@ async function startInteractive(options) {
     if (typeof process.stdin.pause === 'function') process.stdin.pause();
   }
 
-  process.stdout.write(`${COLORS.faint('再见。用 dgxay -c 继续上一次对话。')}\n`);
+  process.stdout.write(`${COLORS.faint(t('bye'))}\n`);
   return 0;
 }
 

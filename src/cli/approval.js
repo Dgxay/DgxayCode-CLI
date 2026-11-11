@@ -126,14 +126,14 @@ async function askApproval(request, options = {}) {
   if (!interactive) {
     // 非交互：一律拒绝，并提示如何绕过
     process.stderr.write(
-      `${COLORS.yellow('[需授权]')} ${request.title}：${request.operation}\n` +
-        `${COLORS.dim('  当前不是交互终端，已自动拒绝。请改用完全权限（--permission full）或交互式运行。')}\n`
+      `${COLORS.yellow('[permission]')} ${request.title}：${request.operation}\n` +
+        `${COLORS.dim('  Not an interactive terminal — denied. Use --permission full or run interactively.')}\n`
     );
     return false;
   }
 
   const lines = [];
-  lines.push({ text: `${COLORS.faint('操作')}  ${COLORS.bold(request.operation)}`, raw: `操作  ${request.operation}` });
+  lines.push({ text: `${COLORS.faint('op')}  ${COLORS.bold(request.operation)}`, raw: `op  ${request.operation}` });
   for (const line of String(request.detail || '').split('\n')) {
     if (!line.trim()) continue;
     const idx = line.indexOf('：');
@@ -152,12 +152,12 @@ async function askApproval(request, options = {}) {
   }
   if (request.workspace) {
     lines.push({ text: '', raw: '' });
-    lines.push({ text: COLORS.faint(`工作空间 ${request.workspace}`), raw: `工作空间 ${request.workspace}` });
+    lines.push({ text: COLORS.faint(`workspace ${request.workspace}`), raw: `workspace ${request.workspace}` });
   }
   if (request.review) {
     lines.push({ text: '', raw: '' });
-    const who = request.reviewer ? `审查模型 ${request.reviewer}` : '自动审查';
-    lines.push({ text: COLORS.red(`${who} 判定可疑`), raw: `${who} 判定可疑` });
+    const who = request.reviewer ? `reviewer ${request.reviewer}` : 'auto-review';
+    lines.push({ text: COLORS.red(`${who} flagged this`), raw: `${who} flagged this` });
     for (const piece of wrapText(request.review, 58)) {
       lines.push({ text: COLORS.dim(`  ${piece}`), raw: `  ${piece}` });
     }
@@ -165,20 +165,20 @@ async function askApproval(request, options = {}) {
 
   process.stdout.write(`${frameText(lines, { title: request.title })}\n`);
 
-  const promptText = `${COLORS.accent('允许执行吗？')} ${COLORS.faint('[y] 允许  [n] 拒绝')} `;
+  const promptText = `${COLORS.accent('Allow this?')} ${COLORS.faint('[y] yes  [n] no')} `;
   process.stdout.write(promptText);
   const result = await readKey({ timeout: options.timeout || APPROVAL_TIMEOUT });
 
   if (result.key === 'y') {
-    process.stdout.write(`${COLORS.green('允许')}\n`);
+    process.stdout.write(`${COLORS.green('allowed')}\n`);
     return true;
   }
   const label =
     result.key === 'timeout'
-      ? COLORS.yellow('等待超时，已拒绝')
+      ? COLORS.yellow('timed out — denied')
       : result.key === 'escape'
-        ? COLORS.dim('已拒绝')
-        : COLORS.red('已拒绝');
+        ? COLORS.dim('denied')
+        : COLORS.red('denied');
   process.stdout.write(`${label}\n`);
   return false;
 }

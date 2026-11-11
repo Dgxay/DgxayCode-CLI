@@ -19,30 +19,30 @@ const { StreamRenderer } = require('../cli/render');
 const { resolveChatArg } = require('./_shared');
 
 const options = [
-  { name: 'prompt', alias: 'p', type: 'string', valueName: 'text', desc: '提示词' },
-  { name: 'mode', alias: 'm', type: 'string', valueName: 'mode', desc: 'chat / work（默认 chat）' },
+  { name: 'prompt', alias: 'p', type: 'string', valueName: 'text', desc: 'Prompt' },
+  { name: 'mode', alias: 'm', type: 'string', valueName: 'mode', desc: 'chat / work (default chat)' },
   { name: 'permission', type: 'string', valueName: 'level', desc: 'none / normal / auto / full' },
-  { name: 'workspace', alias: 'C', type: 'string', valueName: 'dir', desc: '工作空间目录' },
-  { name: 'provider', type: 'string', valueName: 'name', desc: '供应商 id 或名称' },
-  { name: 'model', type: 'string', valueName: 'id', desc: '模型 id' },
-  { name: 'skill', type: 'string', valueName: 'name', desc: '启用的技能' },
-  { name: 'resume', alias: 'r', type: 'string', valueName: 'id|index', desc: '在指定会话上继续' },
-  { name: 'continue', alias: 'c', type: 'boolean', desc: '在最近的会话上继续' },
-  { name: 'output', alias: 'o', type: 'string', valueName: 'text|json', desc: '输出格式，默认 text' },
-  { name: 'yes', alias: 'y', type: 'boolean', desc: '自动同意授权请求（危险）' },
-  { name: 'quiet', alias: 'q', type: 'boolean', desc: '只输出回答正文' }
+  { name: 'workspace', alias: 'C', type: 'string', valueName: 'dir', desc: 'Workspace directory' },
+  { name: 'provider', type: 'string', valueName: 'name', desc: 'Provider id or name' },
+  { name: 'model', type: 'string', valueName: 'id', desc: 'Model id' },
+  { name: 'skill', type: 'string', valueName: 'name', desc: 'Skill to enable' },
+  { name: 'resume', alias: 'r', type: 'string', valueName: 'id|index', desc: 'Continue a conversation by index or id' },
+  { name: 'continue', alias: 'c', type: 'boolean', desc: 'Continue the most recent conversation' },
+  { name: 'output', alias: 'o', type: 'string', valueName: 'text|json', desc: 'Output format, default text' },
+  { name: 'yes', alias: 'y', type: 'boolean', desc: 'Auto-approve permission requests (dangerous)' },
+  { name: 'quiet', alias: 'q', type: 'boolean', desc: 'Only print the reply text' }
 ];
 
 async function run({ argv, globalOptions, runtime }) {
   const { options: opts, positionals } = parseArgs(argv, options);
   const prompt = String(opts.prompt || positionals.join(' ') || runtime.prompt || '').trim();
   if (!prompt) {
-    throw Object.assign(new Error('缺少提示词：请使用 -p "..." 或直接跟问题'), { userError: true });
+    throw Object.assign(new Error('Missing prompt: use -p "..." or pass the question directly'), { userError: true });
   }
 
   const config = settings.readConfig();
   if (!config.providers?.length) {
-    throw Object.assign(new Error('尚未配置供应商，请先运行 dgxay config init'), { userError: true });
+    throw Object.assign(new Error('No provider configured. Run dgxay config init first'), { userError: true });
   }
 
   const mode = String(opts.mode || runtime.mode || 'chat') === 'work' ? 'work' : 'chat';
@@ -148,11 +148,11 @@ function persistChat({ chat, prompt, mode, permission, result, history }) {
       files: result.files,
       usage: result.usage || null
     });
-    if (!target.title || target.title === '新对话') target.title = sessions.titleFrom(prompt);
+    if (!target.title || target.title === 'New conversation') target.title = sessions.titleFrom(prompt);
     sessions.saveChat(target);
     return target;
   } catch (err) {
-    if (process.env.DGXAY_DEBUG === '1') process.stderr.write(`[session] 保存失败：${err.message}\n`);
+    if (process.env.DGXAY_DEBUG === '1') process.stderr.write(`[session] save failed: ${err.message}\n`);
     return null;
   }
 }
@@ -160,13 +160,13 @@ function persistChat({ chat, prompt, mode, permission, result, history }) {
 module.exports = {
   name: 'run',
   aliases: [],
-  summary: '单次执行：把提示词发给模型并输出结果',
-  usage: 'dgxay run -p "提示词" [-C 目录] [-m work] [--permission auto]',
+  summary: 'One-shot: send a prompt and print the reply',
+  usage: 'dgxay run -p "prompt" [-C dir] [-m work] [--permission auto]',
   options,
   examples: [
-    'dgxay run -p "解释这个仓库的目录结构" -C .',
-    'dgxay run -p "给 README 补充安装说明" -m work -C ./project --permission normal',
-    'dgxay run -p "写一个快排函数" -o json'
+    'dgxay run -p "explain the structure of this repo" -C .',
+    'dgxay run -p "add install notes to the README" -m work -C ./project',
+    'dgxay run -p "write a quicksort function" -o json'
   ],
   run
 };

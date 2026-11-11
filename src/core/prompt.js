@@ -10,80 +10,80 @@ const oauth = require('./oauth');
 const REVIEW_TIMEOUT = 25000;
 
 const REVIEW_SYSTEM = [
-  '你是 DgxayCode 的本机操作安全审查模型。AI 助手在获得用户授权前，由你判断一次操作是否可能伤害用户的电脑或泄露数据。',
-  '只输出 JSON，不要代码块：{"decision":"allow","reason":"..."} 或 {"decision":"review","reason":"..."}',
-  'allow 适用于：读取与任务直接相关的文件、在工作空间内写入普通文本文件、查看目录、执行只读查询、访问公开文档。',
-  'review 适用于：删除或覆盖重要文件、修改工作空间外的系统/用户目录、安装/卸载/提权/服务/批量脚本、访问 .ssh/.env/密钥/浏览器数据、上传本地数据到外部、命令或目标不明确、可能不可逆。',
-  '不确定时选择 review。理由用简体中文，不超过 60 字。'
+  'You are the local-operation safety reviewer for DgxayCode. Before the AI assistant is allowed to act on the user\'s machine, you decide whether an operation could harm the computer or leak data.',
+  'Output JSON only, no code fences: {"decision":"allow","reason":"..."} or {"decision":"review","reason":"..."}',
+  'allow: reading files directly relevant to the task, writing ordinary text files inside the workspace, listing directories, read-only queries, fetching public documentation.',
+  'review: deleting or overwriting important files, touching system or user directories outside the workspace, installing/uninstalling/elevating/services/bulk scripts, reading .ssh/.env/keys/browser data, uploading local data, ambiguous commands or targets, anything irreversible.',
+  'When unsure, choose review. Keep the reason under 60 characters.'
 ].join('\n');
 
 function systemPromptFor({ mode, permission, workspace, customPrompt, skill }) {
   const parts = [];
   parts.push(
-    '你是 DgxayCode 命令行版内置的 AI 助手。回答使用简体中文（除非用户使用其他语言），结构清晰，尽量简洁，合理使用 Markdown。'
+    'You are the AI assistant built into the DgxayCode command-line tool. Always answer in English unless the user writes in another language. Be clear and concise, and use Markdown where it helps.'
   );
   if (skill?.content) {
-    parts.push(`【本对话启用的技能：${skill.name}】\n${skill.content}`);
+    parts.push(`[Skill enabled for this conversation: ${skill.name}]\n${skill.content}`);
   }
   if (customPrompt && String(customPrompt).trim()) {
-    parts.push(`用户自定义指令：\n${String(customPrompt).trim()}`);
+    parts.push(`User instructions:\n${String(customPrompt).trim()}`);
   }
 
   if (mode !== 'work') {
-    parts.push('当前为「对话模式」：不提供文件系统与终端工具，直接通过文字回答用户。');
+    parts.push('You are in "chat mode": no filesystem or shell tools are available. Answer in prose.');
     if (permission !== 'none') {
       parts.push(
-        '如果用户明确要求安装 MCP server，可以调用 install_mcp_server 保存启动配置，并提示用户运行 dgxay mcp start 启动。'
+        'If the user explicitly asks to install an MCP server you may call install_mcp_server to save the launch configuration, then tell them to run dgxay mcp start.'
       );
     }
     return parts.join('\n\n');
   }
 
-  parts.push(`当前为「工作模式」。工作空间目录：${workspace || '（尚未选择）'}。`);
+  parts.push(`You are in "work mode". Workspace directory: ${workspace || '(not selected)'}.`);
   if (permission === 'none') {
     parts.push(
-      '权限级别：无权限。你只能以只读方式访问工作空间内的文件，禁止修改/创建/删除文件，禁止联网，禁止执行命令。' +
-        '如果用户要求写入文件、联网或执行命令，请说明需要切换到「普通权限」「自动审查」或「完全权限」。'
+      'Permission level: none. You may only read files inside the workspace. Writing, creating, deleting, network access and shell commands are all forbidden. ' +
+        'If the user asks for any of those, explain that they need to switch to normal, auto-review or full permission.'
     );
   } else if (permission === 'normal') {
     parts.push(
-      '权限级别：普通权限。你拥有全部能力：可以读写任意文件、执行终端命令、访问网络。' +
-        '但每一次工具调用或终端命令都需要用户在终端确认后才能执行；如果用户拒绝，不要重试，改用已经获得的信息回答。'
+      'Permission level: normal. You have every capability: read/write any file, run shell commands, access the network. ' +
+        'Every tool call requires explicit user approval in the terminal first; if the user declines, do not retry — answer with what you already know.'
     );
   } else if (permission === 'auto') {
     parts.push(
-      '权限级别：自动审查。你拥有全部能力：可以读写任意文件、执行终端命令、访问网络。' +
-        '每一次操作会先由自动审查模型判断风险，安全操作自动放行，可疑操作转交用户确认；如果被拒绝，不要重试。'
+      'Permission level: auto review. You have every capability: read/write any file, run shell commands, access the network. ' +
+        'Each operation is first judged by the reviewer model; safe ones run automatically and suspicious ones are handed to the user. If declined, do not retry.'
     );
   } else {
     parts.push(
-      '权限级别：完全权限。你可以执行终端命令、访问任意文件、无限制联网，不再经过审查或询问。执行破坏性操作前请先向用户确认。'
+      'Permission level: full access. You may run shell commands, touch any file and access the network without review. Confirm destructive actions with the user first.'
     );
   }
 
   parts.push(
-    '安装 MCP：如果用户明确要求安装 MCP server，调用 install_mcp_server 保存启动配置，完成后提示用户运行 dgxay mcp start 或在 /mcp 面板中启动。不要伪造安装结果。'
+    'MCP: if the user explicitly asks to install an MCP server, call install_mcp_server to save it, then tell them to run dgxay mcp start (or use /mcp). Never fabricate the result.'
   );
 
   if (workspace) {
     parts.push(
       [
-        '工作模式规则：',
-        '1. 需要查看或修改文件时，必须调用工具，不要凭空假设文件内容；修改前先 read_file。',
-        '2. 所有生成的文件必须保存到工作空间内，优先使用相对路径。',
-        '3. 完成任务后用简短的中文总结你创建/修改了哪些文件。',
+        'Work-mode rules:',
+        '1. Whenever you need to inspect or change files, call a tool — never assume file contents. Read before you write.',
+        '2. Save every generated file inside the workspace, preferring relative paths.',
+        '3. When the task is done, summarize in a short list which files you created or modified.',
         '',
-        '【任务执行纪律】',
-        '• 收到目标后先拆成可执行步骤，然后立刻调用工具开始执行。禁止只输出计划、承诺或“接下来我会…”。',
-        '• 在任务真正完成之前不得停止，也不要等待用户说“继续”。每次工具返回后自动进入下一步，直到所有步骤都完成。',
-        '• 需要多次读写、多个文件或多个命令时，连续执行完再结束；不要做完一步就交差。',
-        '• 工具报错时先分析原因并换一种方式重试；只有缺少必要信息、权限被拒绝或任务确实无法继续时才可停下，并说明具体阻塞点。',
-        '• 结束前做一次验证：重新读取关键文件、检查命令输出或运行必要测试。',
-        '• 全部完成后，再用简短列表报告已完成内容与验证结果。未完成时禁止输出结束语或“如需继续请告诉我”。'
+        '[Execution discipline]',
+        '• Break the goal into actionable steps and start calling tools immediately. Do not output only a plan or a promise ("I will..." / "Next I will...").',
+        '• Do not stop until the task is genuinely finished, and do not wait for the user to say "continue". After each tool result, proceed to the next step automatically.',
+        '• When the task needs several reads, writes or commands, run them all before wrapping up; do not stop after one step.',
+        '• On tool errors, analyse the cause and retry differently. Only stop when information is missing, permission was denied, or the task truly cannot continue — and state the exact blocker.',
+        '• Verify before finishing: re-read key files, check command output, or run the relevant tests.',
+        '• Then report what was done and how it was verified. Never end with "let me know if you want me to continue".'
       ].join('\n')
     );
   } else {
-    parts.push('尚未选择工作空间时，请不要调用任何文件工具，提示用户先用 /cd 选择工作目录。');
+    parts.push('No workspace is selected: do not call file tools. Ask the user to pick a directory with /cd.');
   }
   return parts.join('\n\n');
 }
@@ -101,7 +101,7 @@ function summarizeArgs(args) {
   if (typeof args !== 'object') return String(args).slice(0, 1800);
   const copy = { ...args };
   if (typeof copy.content === 'string' && copy.content.length > 1200) {
-    copy.content = `${copy.content.slice(0, 1200)}…（共 ${copy.content.length} 字符）`;
+    copy.content = `${copy.content.slice(0, 1200)}… (${copy.content.length} chars total)`;
   }
   let text = JSON.stringify(copy);
   if (text.length > 2000) text = `${text.slice(0, 2000)}…`;
@@ -130,7 +130,7 @@ function hasReviewModel(config) {
 async function reviewOperation({ config, providerId, kind, name, args, command, workspace }) {
   const reviewer = resolveReviewer(config, providerId);
   if (!reviewer) {
-    return { decision: 'review', reason: '尚未配置自动审查模型，需要你确认', reviewer: null, modelId: null };
+    return { decision: 'review', reason: 'No review model configured — asking you instead', reviewer: null, modelId: null };
   }
 
   const controller = new AbortController();
@@ -148,12 +148,12 @@ async function reviewOperation({ config, providerId, kind, name, args, command, 
         {
           role: 'user',
           content: [
-            `操作类型：${kind === 'terminal' ? '终端命令' : '工具调用'}`,
-            `操作名称：${name}`,
-            command ? `命令：${command}` : '',
-            `工作空间：${workspace || '（未选择）'}`,
-            args ? `参数：${summarizeArgs(args)}` : '',
-            '请判断这次操作是否安全。'
+            `Operation type: ${kind === 'terminal' ? 'shell command' : 'tool call'}`,
+            `Operation: ${name}`,
+            command ? `Command: ${command}` : '',
+            `Workspace: ${workspace || '(none)'}`,
+            args ? `Arguments: ${summarizeArgs(args)}` : '',
+            'Is this operation safe?'
           ]
             .filter(Boolean)
             .join('\n')
@@ -167,7 +167,7 @@ async function reviewOperation({ config, providerId, kind, name, args, command, 
 
     const text = String(result.content || '').trim();
     let decision = 'review';
-    let reason = text.slice(0, 160) || '审查模型未给出结论';
+    let reason = text.slice(0, 160) || 'The reviewer gave no verdict';
     const left = text.indexOf('{');
     const right = text.lastIndexOf('}');
     if (left !== -1 && right > left) {
@@ -190,7 +190,7 @@ async function reviewOperation({ config, providerId, kind, name, args, command, 
     // 超时、网络失败或返回无法解析时一律按“可疑”处理，转交用户确认
     return {
       decision: 'review',
-      reason: `自动审查失败：${err.message}`,
+      reason: `Auto-review failed: ${err.message}`,
       reviewer: reviewer.provider.name,
       modelId: reviewer.modelId,
       source: reviewer.source
@@ -214,7 +214,7 @@ function looksUnfinishedWork(result) {
 async function compressMessages({ config, providerId, modelId, messages }) {
   const provider = (config.providers || []).find((item) => item.id === providerId) || (config.providers || [])[0];
   const targetModel = modelId || provider?.models?.[0]?.id;
-  if (!provider || !targetModel) throw new Error('没有可用模型，无法压缩上下文');
+  if (!provider || !targetModel) throw new Error('No model available to compress the context');
 
   const history = (Array.isArray(messages) ? messages : []).filter(
     (m) => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string' && m.content.trim()
@@ -222,7 +222,7 @@ async function compressMessages({ config, providerId, modelId, messages }) {
   if (!history.length) return { ok: true, summary: '', usage: null };
 
   const transcript = history
-    .map((message) => `${message.role === 'user' ? '用户' : '助手'}：${message.content}`)
+    .map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`)
     .join('\n\n')
     .slice(-150000);
 
@@ -236,12 +236,12 @@ async function compressMessages({ config, providerId, modelId, messages }) {
     messages: [
       {
         role: 'system',
-        content: '你是上下文压缩器。把长对话压缩成一份可供后续继续工作的摘要。只输出摘要正文，不要寒暄，不要代码块围栏。'
+        content: 'You compress conversations into a summary that lets work continue. Output only the summary body: no greeting, no code fences.'
       },
       {
         role: 'user',
         content:
-          '请压缩下面的对话。必须保留：用户目标与偏好、关键事实与数字、已做出的决定、涉及的文件路径与代码位置、未完成事项、重要工具结果。删除寒暄、重复解释和无关内容。用简体中文输出，控制在 800 字以内。\n\n' +
+          'Compress the conversation below. Keep: user goals and preferences, key facts and numbers, decisions made, file paths and code locations, open items, and important tool results. Drop greetings, repetition and noise. Write in English, at most 800 words.\n\n' +
           transcript
       }
     ],
@@ -251,7 +251,7 @@ async function compressMessages({ config, providerId, modelId, messages }) {
   });
 
   const summary = String(result.content || '').trim();
-  if (!summary) throw new Error('模型没有返回摘要，请稍后重试');
+  if (!summary) throw new Error('The model returned no summary, try again later');
   return { ok: true, summary, usage: result.usage || null };
 }
 

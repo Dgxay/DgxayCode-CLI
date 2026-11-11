@@ -16,20 +16,20 @@ const { actionFirst } = require('../cli/args');
 const sessions = require('../core/sessions');
 
 const options = [
-  { name: 'format', type: 'string', valueName: 'md|json', desc: '输出格式：markdown（默认）/ json' },
-  { name: 'output', alias: 'o', type: 'string', valueName: 'file', desc: '写入文件而不是打印' }
+  { name: 'format', type: 'string', valueName: 'md|json', desc: 'Output format: markdown (default) / json' },
+  { name: 'output', alias: 'o', type: 'string', valueName: 'file', desc: 'Write to a file instead of printing' }
 ];
 
 function toMarkdown(chat) {
   const lines = [];
   const date = new Date(chat.createdAt || Date.now());
-  lines.push(`# ${chat.title || '新对话'}`);
+  lines.push(`# ${chat.title || 'New conversation'}`);
   lines.push('');
-  lines.push(`> ${date.toLocaleString()} · ${chat.mode === 'work' ? '工作模式' : '对话模式'}${chat.skill ? ` · 技能 ${chat.skill}` : ''}`);
+  lines.push(`> ${date.toLocaleString()} · ${chat.mode === 'work' ? 'Work mode' : 'Chat mode'}${chat.skill ? ` · Skill ${chat.skill}` : ''}`);
   lines.push('');
   for (const message of chat.messages) {
     if (message.role === 'user') {
-      lines.push('## 用户');
+      lines.push('## User');
       lines.push('');
       lines.push(message.content || '');
       lines.push('');
@@ -39,17 +39,17 @@ function toMarkdown(chat) {
       lines.push(message.content || '');
       lines.push('');
       if (message.toolLog?.length) {
-        lines.push('<details><summary>工具调用</summary>');
+        lines.push('<details><summary>Tool calls</summary>');
         lines.push('');
         for (const tool of message.toolLog) {
-          lines.push(`- \`${tool.name}\` ${tool.ok ? '成功' : '失败'}${tool.review?.reason ? ` · ${tool.review.reason}` : ''}`);
+          lines.push(`- \`${tool.name}\` ${tool.ok ? 'ok' : 'failed'}${tool.review?.reason ? ` · ${tool.review.reason}` : ''}`);
         }
         lines.push('');
         lines.push('</details>');
         lines.push('');
       }
     } else if (message.role === 'terminal') {
-      lines.push('## 终端');
+      lines.push('## Terminal');
       lines.push('');
       lines.push('```');
       lines.push(`$ ${message.command}`);
@@ -66,12 +66,12 @@ async function run({ argv }) {
   const ref = action || rest[0] || '';
   const chats = sessions.listChats();
   if (!chats.length) {
-    print.warn('还没有可以导出的会话');
+    print.warn('No conversation to export yet');
     return 1;
   }
   const chat = ref ? sessions.resolveChat(ref, chats) : chats[0];
   if (!chat) {
-    print.fail(`找不到会话：${ref}`);
+    print.fail(`Conversation not found: ${ref}`);
     return 1;
   }
   const format = String(opts.format || 'md').toLowerCase();
@@ -84,7 +84,7 @@ async function run({ argv }) {
     const target = path.resolve(opts.output);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, 'utf8');
-    print.ok(`已导出「${chat.title}」到 ${target}`);
+    print.ok(`Exported "${chat.title}" to ${target}`);
     return 0;
   }
   process.stdout.write(content.endsWith('\n') ? content : `${content}\n`);
@@ -94,8 +94,8 @@ async function run({ argv }) {
 module.exports = {
   name: 'export',
   aliases: ['dump'],
-  summary: '导出会话为 Markdown / JSON',
-  usage: 'dgxay export [序号|ID] [--format md|json] [-o 文件]',
+  summary: 'Export a conversation as Markdown / JSON',
+  usage: 'dgxay export [n|id] [--format md|json] [-o file]',
   options,
   examples: ['dgxay export', 'dgxay export 2 -o chat.md', 'dgxay export -o chats.json --format json'],
   run

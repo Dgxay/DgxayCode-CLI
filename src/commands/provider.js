@@ -21,15 +21,15 @@ const oauth = require('../core/oauth');
 const { ask, askSecret, confirm } = require('../services/input');
 
 const options = [
-  { name: 'name', type: 'string', valueName: 'text', desc: '供应商名称' },
+  { name: 'name', type: 'string', valueName: 'text', desc: 'Provider name' },
   { name: 'protocol', type: 'string', valueName: 'p', desc: 'openai / anthropic / responses' },
-  { name: 'base-url', type: 'string', valueName: 'url', desc: '接口地址' },
+  { name: 'base-url', type: 'string', valueName: 'url', desc: 'Base URL' },
   { name: 'api-key', type: 'string', valueName: 'key', desc: 'API Key' },
-  { name: 'model', type: 'list', valueName: 'id', desc: '模型 ID（可重复或逗号分隔）' },
-  { name: 'oauth-provider', type: 'string', valueName: 'id', desc: '使用已连接的 OAuth 账户' },
-  { name: 'review-model', type: 'string', valueName: 'id', desc: '自动审查模型 ID' },
-  { name: 'context-window', type: 'number', valueName: 'n', desc: '上下文窗口（可选）' },
-  { name: 'yes', alias: 'y', type: 'boolean', desc: '跳过确认' }
+  { name: 'model', type: 'list', valueName: 'id', desc: 'Model ID (repeatable or comma-separated)' },
+  { name: 'oauth-provider', type: 'string', valueName: 'id', desc: 'Use a connected OAuth account' },
+  { name: 'review-model', type: 'string', valueName: 'id', desc: 'Auto review model ID' },
+  { name: 'context-window', type: 'number', valueName: 'n', desc: 'Context window (optional)' },
+  { name: 'yes', alias: 'y', type: 'boolean', desc: 'Skip confirmation' }
 ];
 
 function list() {
@@ -37,15 +37,15 @@ function list() {
   const providers = config.providers || [];
   print.blank();
   if (!providers.length) {
-    print.hint('还没有供应商。运行 dgxay provider add 或 dgxay config init');
+    print.hint('No providers yet. Run dgxay provider add or dgxay config init');
     print.blank();
     return 0;
   }
-  print.heading(`供应商（${providers.length}）`);
+  print.heading(`Providers (${providers.length})`);
   const rows = providers.map((provider, index) => [
     String(index + 1),
-    index === 0 ? COLORS.accent('默认') : '',
-    provider.id === config.activeProviderId ? COLORS.green('当前') : '',
+    index === 0 ? COLORS.accent('default') : '',
+    provider.id === config.activeProviderId ? COLORS.green('active') : '',
     provider.name,
     settings.PROTOCOL_META[provider.protocol || 'openai'].short,
     provider.baseUrl,
@@ -58,17 +58,17 @@ function list() {
       { title: '#', max: 3 },
       { title: '', max: 4 },
       { title: '', max: 4 },
-      { title: '名称', max: 16 },
-      { title: '协议', max: 16 },
+      { title: 'Name', max: 16 },
+      { title: 'Protocol', max: 16 },
       { title: 'Base URL', max: 40 },
-      { title: '模型', max: 30 },
-      { title: '审查模型', max: 18 },
-      { title: '认证', max: 16 }
+      { title: 'Models', max: 30 },
+      { title: 'Review model', max: 18 },
+      { title: 'Auth', max: 16 }
     ],
     rows
   );
   print.blank();
-  print.hint('供应商顺序有意义：第一个是默认供应商，也是未配置审查模型时的回退来源');
+  print.hint('Provider order matters: the first one is the default provider and the fallback source when no review model is configured');
   print.blank();
   return 0;
 }
@@ -84,7 +84,7 @@ async function add(opts) {
 
   if (interactive) {
     if (!opts.protocol) {
-      const answer = await ask('协议 [1] OpenAI ChatCompletions  [2] Anthropic Messages  [3] OpenAI Responses : ');
+      const answer = await ask('Protocol [1] OpenAI ChatCompletions  [2] Anthropic Messages  [3] OpenAI Responses : ');
       const index = Number(String(answer || '').trim()) || 1;
       protocol = ['openai', 'anthropic', 'responses'][index - 1] || 'openai';
     }
@@ -93,15 +93,15 @@ async function add(opts) {
       baseUrl = String(answer || '').trim() || settings.PROTOCOL_META[protocol].basePlaceholder;
     }
     if (!name) {
-      const answer = await ask('供应商名称: ');
+      const answer = await ask('Provider name: ');
       name = String(answer || '').trim();
     }
     if (!oauthProvider && apiKey === undefined) {
-      const secret = await askSecret('API Key（本地模型可留空）: ');
+      const secret = await askSecret('API Key (may be empty for local models): ');
       apiKey = secret === null ? undefined : secret;
     }
     if (!models.length) {
-      const answer = await ask('模型 ID（多个用逗号分隔）: ');
+      const answer = await ask('Model ID (separate multiple with commas): ');
       models = String(answer || '')
         .split(/[,，\s]+/)
         .filter(Boolean);
@@ -118,14 +118,14 @@ async function add(opts) {
     oauthProvider,
     reviewModelId: opts.reviewModelId
   });
-  print.ok(`已添加供应商「${result.provider.name}」（${result.provider.id}）`);
+  print.ok(`Provider added: ${result.provider.name} (${result.provider.id})`);
   return 0;
 }
 
 function edit(ref, opts) {
   const provider = settings.findProvider(ref);
   if (!provider) {
-    print.fail(`找不到供应商：${ref}`);
+    print.fail(`Provider not found: ${ref}`);
     return 1;
   }
   const result = settings.upsertProvider({
@@ -139,28 +139,28 @@ function edit(ref, opts) {
     oauthProvider: opts.oauthProvider,
     reviewModelId: opts.reviewModelId
   });
-  print.ok(`已更新供应商「${result.provider.name}」`);
+  print.ok(`Provider updated: ${result.provider.name}`);
   return 0;
 }
 
 async function remove(ref, opts) {
   const provider = settings.findProvider(ref);
   if (!provider) {
-    print.fail(`找不到供应商：${ref}`);
+    print.fail(`Provider not found: ${ref}`);
     return 1;
   }
   if (!opts.yes && process.stdin.isTTY) {
-    const ok = await confirm(`删除供应商「${provider.name}」及其密钥？`, false);
+    const ok = await confirm(`Delete provider "${provider.name}" and its API key?`, false);
     if (!ok) {
-      print.hint('已取消');
+      print.hint('Cancelled');
       return 1;
     }
   }
   const config = settings.removeProvider(provider.id);
-  print.ok(`已删除「${provider.name}」`);
-  if (!config.providers?.length) print.hint('已经没有供应商了，运行 dgxay config init 重新配置');
+  print.ok(`Deleted "${provider.name}"`);
+  if (!config.providers?.length) print.hint('No providers left; run dgxay config init to reconfigure');
   else if (config.activeProviderId !== settings.readConfig().activeProviderId) {
-    print.hint(`当前供应商已切换为「${(config.providers || []).find((p) => p.id === config.activeProviderId)?.name || '未知'}」`);
+    print.hint(`Active provider switched to "${(config.providers || []).find((p) => p.id === config.activeProviderId)?.name || 'unknown'}"`);
   }
   return 0;
 }
@@ -168,36 +168,36 @@ async function remove(ref, opts) {
 function use(ref) {
   const provider = settings.findProvider(ref);
   if (!provider) {
-    print.fail(`找不到供应商：${ref}`);
+    print.fail(`Provider not found: ${ref}`);
     return 1;
   }
   const model = provider.models?.[0];
   if (!model) {
-    print.fail(`供应商 ${provider.name} 没有模型`);
+    print.fail(`Provider ${provider.name} has no models`);
     return 1;
   }
   settings.saveConfig({ activeProviderId: provider.id, activeModelId: model.id });
-  print.ok(`当前供应商：${provider.name} / ${model.name || model.id}`);
+  print.ok(`Active provider: ${provider.name} / ${model.name || model.id}`);
   return 0;
 }
 
 function review(ref, opts) {
   const provider = settings.findProvider(ref);
   if (!provider) {
-    print.fail(`找不到供应商：${ref}`);
+    print.fail(`Provider not found: ${ref}`);
     return 1;
   }
   if (opts.reviewModel === undefined) {
     const model = (provider.models || []).find((m) => m.id === provider.reviewModelId);
-    if (model) print.write(`${provider.name} 的审查模型：${model.name || model.id}（${model.id}）`);
-    else print.write(`${provider.name} 未配置审查模型，自动审查时会回退到默认供应商`);
+    if (model) print.write(`Review model for ${provider.name}: ${model.name || model.id} (${model.id})`);
+    else print.write(`${provider.name} has no review model configured; auto review falls back to the default provider`);
     return 0;
   }
   const models = provider.models || [];
   const target = models.find((m) => m.id === opts.reviewModel);
   if (opts.reviewModel && !target) {
-    print.fail(`供应商 ${provider.name} 下没有模型 ${opts.reviewModel}`);
-    print.hint(`可用：${models.map((m) => m.id).join(', ')}`);
+    print.fail(`Provider ${provider.name} has no model ${opts.reviewModel}`);
+    print.hint(`Available: ${models.map((m) => m.id).join(', ')}`);
     return 1;
   }
   const next = (settings.readConfig().providers || []).map((p) =>
@@ -205,10 +205,10 @@ function review(ref, opts) {
   );
   settings.saveConfig({ providers: next });
   if (target) {
-    print.ok(`${provider.name} 的自动审查模型：${target.name || target.id}`);
-    print.hint('现在可以在 /permission 中选择「自动审查」');
+    print.ok(`Auto review model for ${provider.name}: ${target.name || target.id}`);
+    print.hint('You can now select "Auto review" in /permission');
   } else {
-    print.ok(`已清除 ${provider.name} 的审查模型`);
+    print.ok(`Cleared the review model for ${provider.name}`);
   }
   return 0;
 }
@@ -216,37 +216,37 @@ function review(ref, opts) {
 function move(ref, direction) {
   const dir = direction === 'up' || direction === 'u' || direction === '-1' ? -1 : 1;
   settings.moveProvider(ref, dir);
-  print.ok(`已${dir < 0 ? '上移' : '下移'}「${settings.findProvider(ref)?.name || ref}」`);
+  print.ok(`${dir < 0 ? 'Moved up' : 'Moved down'} "${settings.findProvider(ref)?.name || ref}"`);
   return list();
 }
 
 function oauthAccounts() {
   const list = oauth.listProviders();
   print.blank();
-  print.heading('OAuth 账户');
+  print.heading('OAuth accounts');
   const rows = list.map((item) => [
     item.name,
     item.subtitle,
     item.connection && !item.connection.expired
-      ? COLORS.green('已连接')
+      ? COLORS.green('connected')
       : item.connection?.expired
-        ? COLORS.yellow('已过期')
-        : '未连接',
+        ? COLORS.yellow('expired')
+        : 'not connected',
     item.connection?.account || '',
-    item.redirectMode === 'manual' ? '手动授权码' : '系统浏览器'
+    item.redirectMode === 'manual' ? 'manual auth code' : 'system browser'
   ]);
   print.table(
     [
-      { title: '平台', max: 12 },
-      { title: '账户类型', max: 24 },
-      { title: '状态', max: 8 },
-      { title: '账号', max: 30 },
-      { title: '授权方式', max: 12 }
+      { title: 'Platform', max: 12 },
+      { title: 'Account type', max: 24 },
+      { title: 'Status', max: 8 },
+      { title: 'Account', max: 30 },
+      { title: 'Auth method', max: 12 }
     ],
     rows
   );
   print.blank();
-  print.hint('dgxay oauth connect <平台> 连接账户；连接后可用 dgxay provider add --oauth-provider <平台>');
+  print.hint('dgxay oauth connect <platform> to connect an account; then use dgxay provider add --oauth-provider <platform>');
   print.blank();
   return 0;
 }
@@ -263,33 +263,33 @@ async function run({ argv }) {
       return add(opts);
     case 'edit':
     case 'set': {
-      if (!rest[0]) throw Object.assign(new Error('用法：dgxay provider edit <名称> [选项]'), { userError: true });
+      if (!rest[0]) throw Object.assign(new Error('Usage: dgxay provider edit <name> [options]'), { userError: true });
       return edit(rest[0], opts);
     }
     case 'rm':
     case 'remove':
     case 'delete': {
-      if (!rest[0]) throw Object.assign(new Error('用法：dgxay provider rm <名称>'), { userError: true });
+      if (!rest[0]) throw Object.assign(new Error('Usage: dgxay provider rm <name>'), { userError: true });
       return remove(rest[0], opts);
     }
     case 'use': {
-      if (!rest[0]) throw Object.assign(new Error('用法：dgxay provider use <名称>'), { userError: true });
+      if (!rest[0]) throw Object.assign(new Error('Usage: dgxay provider use <name>'), { userError: true });
       return use(rest[0]);
     }
     case 'mv':
     case 'move': {
-      if (!rest[0]) throw Object.assign(new Error('用法：dgxay provider mv <名称> up|down'), { userError: true });
+      if (!rest[0]) throw Object.assign(new Error('Usage: dgxay provider mv <name> up|down'), { userError: true });
       return move(rest[0], rest[1] || 'down');
     }
     case 'review': {
       if (!rest[0]) {
         const config = settings.readConfig();
-        const rows = (config.providers || []).map((p) => [p.name, p.reviewModelId || '（未配置）']);
+        const rows = (config.providers || []).map((p) => [p.name, p.reviewModelId || '(not configured)']);
         print.blank();
         print.table(
           [
-            { title: '供应商', max: 20 },
-            { title: '审查模型', max: 30 }
+            { title: 'Provider', max: 20 },
+            { title: 'Review model', max: 30 }
           ],
           rows
         );
@@ -301,8 +301,8 @@ async function run({ argv }) {
     case 'oauth':
       return oauthAccounts();
     default:
-      print.fail(`未知子命令：${action}`);
-      print.hint('可用：list / add / edit / rm / use / mv / review / oauth');
+      print.fail(`Unknown subcommand: ${action}`);
+      print.hint('Available: list / add / edit / rm / use / mv / review / oauth');
       return 1;
   }
 }
@@ -310,17 +310,17 @@ async function run({ argv }) {
 module.exports = {
   name: 'provider',
   aliases: ['prov'],
-  summary: '供应商与审查模型管理',
+  summary: 'Provider and review model management',
   usage: 'dgxay provider <list|add|edit|rm|use|mv|review>',
   options,
   subcommands: [
-    ['list', '列出所有供应商'],
-    ['add', '新增供应商'],
-    ['edit <名称>', '修改供应商'],
-    ['rm <名称>', '删除供应商'],
-    ['use <名称>', '设为当前供应商'],
-    ['mv <名称> up|down', '调整顺序'],
-    ['review [名称] [--model id]', '查看 / 设置自动审查模型']
+    ['list', 'List all providers'],
+    ['add', 'Add a provider'],
+    ['edit <name>', 'Edit a provider'],
+    ['rm <name>', 'Delete a provider'],
+    ['use <name>', 'Set as the active provider'],
+    ['mv <name> up|down', 'Reorder providers'],
+    ['review [name] [--model id]', 'View / set the auto review model']
   ],
   examples: [
     'dgxay provider list',

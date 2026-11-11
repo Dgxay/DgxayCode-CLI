@@ -16,7 +16,7 @@ const { parseArgs, actionFirst } = require('../cli/args');
 const { COLORS } = require('../cli/ansi');
 const settings = require('../services/settings');
 
-const options = [{ name: 'both', alias: 'b', type: 'boolean', desc: '同时写入配置（默认只设当前进程）' }];
+const options = [{ name: 'both', alias: 'b', type: 'boolean', desc: 'Also persist to config (default only sets the current process)' }];
 
 async function run({ argv }) {
   const { action, rest, options: opts } = actionFirst(argv, options);
@@ -26,12 +26,12 @@ async function run({ argv }) {
     const workspace = config.work?.workspace || process.cwd();
     print.blank();
     print.keyValue([
-      { label: '当前工作空间', value: workspace },
-      { label: '进程目录', value: process.cwd() },
-      { label: '最近使用', value: (config.work?.recentWorkspaces || []).slice(0, 5).join('\n') || '（无）', multiline: true }
+      { label: 'Current workspace', value: workspace },
+      { label: 'Process directory', value: process.cwd() },
+      { label: 'Recent', value: (config.work?.recentWorkspaces || []).slice(0, 5).join('\n') || '(none)', multiline: true }
     ]);
     print.blank();
-    print.hint('dgxay workspace set <目录> 设置；对话中可用 /cd');
+    print.hint('Set it with dgxay workspace set <dir>; inside a conversation use /cd');
     print.blank();
     return 0;
   }
@@ -40,11 +40,11 @@ async function run({ argv }) {
     const recents = config.work?.recentWorkspaces || [];
     print.blank();
     if (!recents.length) {
-      print.hint('还没有设置过工作空间');
+      print.hint('No workspace has been set yet');
       print.blank();
       return 0;
     }
-    print.heading('最近使用的工作空间');
+    print.heading('Recent workspaces');
     recents.forEach((item, index) => {
       const exists = fs.existsSync(item) ? COLORS.green('✓') : COLORS.red('✗');
       print.write(`  ${status(index + 1)}  ${exists} ${item}`);
@@ -55,23 +55,23 @@ async function run({ argv }) {
 
   if (action === 'set' || action === 'use' || action === 'cd') {
     const target = rest[0] || '';
-    if (!target) throw Object.assign(new Error('用法：dgxay workspace set <目录>'), { userError: true });
+    if (!target) throw Object.assign(new Error('Usage: dgxay workspace set <dir>'), { userError: true });
     const resolved = path.resolve(target);
     try {
-      if (!fs.statSync(resolved).isDirectory()) throw new Error('不是文件夹');
+      if (!fs.statSync(resolved).isDirectory()) throw new Error('Not a directory');
     } catch {
-      print.fail(`目录不存在：${resolved}`);
+      print.fail(`Directory not found: ${resolved}`);
       return 1;
     }
     settings.setWorkspace(resolved);
-    print.ok(`工作空间：${resolved}`);
+    print.ok(`Workspace: ${resolved}`);
     void opts;
     return 0;
   }
 
   if (action === 'clear' || action === 'unset') {
     settings.setWorkspace('');
-    print.ok('已清除工作空间');
+    print.ok('Workspace cleared');
     return 0;
   }
 
@@ -86,14 +86,14 @@ function status(index) {
 module.exports = {
   name: 'workspace',
   aliases: ['ws'],
-  summary: '工作空间管理',
-  usage: 'dgxay workspace [set|list|clear] [目录]',
+  summary: 'Workspace management',
+  usage: 'dgxay workspace [set|list|clear] [dir]',
   options,
   subcommands: [
-    ['show', '显示当前工作空间'],
-    ['set <目录>', '设置工作空间'],
-    ['list', '查看最近使用'],
-    ['clear', '清除']
+    ['show', 'Show current workspace'],
+    ['set <dir>', 'Set the workspace'],
+    ['list', 'Show recent workspaces'],
+    ['clear', 'Clear']
   ],
   examples: ['dgxay workspace set ./project', 'dgxay workspace list'],
   run

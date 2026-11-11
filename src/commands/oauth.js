@@ -19,17 +19,17 @@ const { ask } = require('../services/input');
 
 const options = [
   { name: 'client-id', type: 'string', valueName: 'id', desc: 'OAuth Client ID' },
-  { name: 'client-secret', type: 'string', valueName: 'secret', desc: 'OAuth Client Secret（可选）' },
-  { name: 'authorize-url', type: 'string', valueName: 'url', desc: '授权端点' },
-  { name: 'token-url', type: 'string', valueName: 'url', desc: '令牌端点' },
-  { name: 'scopes', type: 'string', valueName: 'text', desc: '权限范围' },
-  { name: 'code', type: 'string', valueName: 'code', desc: '手动流程：直接提交授权码（code#state）' },
-  { name: 'no-browser', type: 'boolean', desc: '不自动打开浏览器，只打印授权链接' },
-  { name: 'yes', alias: 'y', type: 'boolean', desc: '跳过确认' }
+  { name: 'client-secret', type: 'string', valueName: 'secret', desc: 'OAuth Client Secret (optional)' },
+  { name: 'authorize-url', type: 'string', valueName: 'url', desc: 'Authorize endpoint' },
+  { name: 'token-url', type: 'string', valueName: 'url', desc: 'Token endpoint' },
+  { name: 'scopes', type: 'string', valueName: 'text', desc: 'Permission scope' },
+  { name: 'code', type: 'string', valueName: 'code', desc: 'Manual flow: submit the auth code directly (code#state)' },
+  { name: 'no-browser', type: 'boolean', desc: 'Do not open the browser, only print the authorize link' },
+  { name: 'yes', alias: 'y', type: 'boolean', desc: 'Skip confirmation' }
 ];
 
 function formatExpiry(ts) {
-  if (!ts) return '长期有效';
+  if (!ts) return 'never expires';
   const date = new Date(ts);
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
@@ -40,10 +40,10 @@ function formatExpiry(ts) {
 function list() {
   const providers = oauth.listProviders();
   print.blank();
-  print.heading('账户连接');
+  print.heading('Account connections');
   const rows = providers.map((item) => {
     const connection = item.connection;
-    const status = !connection ? '未连接' : connection.expired ? '已过期' : '已连接';
+    const status = !connection ? 'not connected' : connection.expired ? 'expired' : 'connected';
     const tone = !connection ? (value) => value : connection.expired ? COLORS.yellow : COLORS.green;
     return [
       item.id,
@@ -52,24 +52,24 @@ function list() {
       tone(status),
       connection?.account || '',
       connection ? formatExpiry(connection.expiresAt) : '',
-      item.redirectMode === 'manual' ? '手动授权码' : '系统浏览器'
+      item.redirectMode === 'manual' ? 'manual auth code' : 'system browser'
     ];
   });
   print.table(
     [
       { title: 'ID', max: 10 },
-      { title: '平台', max: 10 },
-      { title: '账户类型', max: 24 },
-      { title: '状态', max: 8 },
-      { title: '账号', max: 28 },
-      { title: '有效期', max: 18 },
-      { title: '授权方式', max: 12 }
+      { title: 'Platform', max: 10 },
+      { title: 'Account type', max: 24 },
+      { title: 'Status', max: 8 },
+      { title: 'Account', max: 28 },
+      { title: 'Expires', max: 18 },
+      { title: 'Auth method', max: 12 }
     ],
     rows
   );
   print.blank();
-  print.hint('dgxay oauth connect <平台> 连接 · dgxay oauth disconnect <平台> 断开');
-  print.hint('连接后可在供应商中使用 OAuth：dgxay provider edit <名称> --oauth-provider <平台>');
+  print.hint('dgxay oauth connect <platform> to connect · dgxay oauth disconnect <platform> to disconnect');
+  print.hint('After connecting, enable OAuth on a provider: dgxay provider edit <name> --oauth-provider <platform>');
   print.blank();
   return 0;
 }
@@ -77,14 +77,14 @@ function list() {
 async function connect(id, opts) {
   const def = oauth.PROVIDERS[id];
   if (!def) {
-    print.fail(`不支持的平台：${id}（可选 openai / anthropic / xai / google）`);
+    print.fail(`Unsupported platform: ${id} (choose openai / anthropic / xai / google)`);
     return 1;
   }
   const current = oauth.listProviders().find((item) => item.id === id);
   if (current.connection && !current.connection.expired && !opts.yes && process.stdin.isTTY) {
-    const answer = await ask(`${def.name} 已连接（${current.connection.account}）。重新授权会覆盖现有令牌，继续？[y/N] `);
+    const answer = await ask(`${def.name} is already connected (${current.connection.account}). Re-authorizing overwrites the existing token. Continue? [y/N] `);
     if (!/^y/i.test(String(answer || '').trim())) {
-      print.hint('已取消');
+      print.hint('Cancelled');
       return 1;
     }
   }
@@ -97,56 +97,56 @@ async function connect(id, opts) {
   } catch (err) {
     print.fail(err.message);
     if (/Client ID/i.test(err.message)) {
-      print.hint(`Google 需要先创建桌面应用 OAuth 客户端：dgxay oauth client google --client-id <ID>`);
+      print.hint(`Google requires a desktop-app OAuth client first: dgxay oauth client google --client-id <ID>`);
     }
     return 1;
   }
 
   print.blank();
-  print.heading(`连接 ${def.name}`);
+  print.heading(`Connect ${def.name}`);
   print.hint(def.hint);
   print.blank();
-  if (flow.browserOpened) print.ok('已打开系统浏览器，请在浏览器中完成授权');
+  if (flow.browserOpened) print.ok('Opened the system browser; complete authorization in the browser');
   else {
-    print.warn('无法自动打开浏览器，请手动访问下面的链接：');
+    print.warn('Could not open the browser automatically; open the link below manually:');
   }
   print.blank();
   process.stdout.write(`${COLORS.cyan(flow.authUrl)}\n`);
   print.blank();
 
   if (flow.mode === 'manual') {
-    print.write('浏览器授权后会显示一段授权码（形如 code#state），把它粘贴到这里：');
+    print.write('After authorizing in the browser, copy the auth code (like code#state) and paste it here:');
     let code = opts.code;
     if (!code) {
       if (!process.stdin.isTTY) {
-        print.fail('非交互环境请使用 --code <授权码>');
+        print.fail('In non-interactive environments use --code <auth code>');
         return 1;
       }
-      code = await ask('授权码: ');
+      code = await ask('Auth code: ');
     }
     if (!code) {
-      print.fail('授权码为空');
+      print.fail('Auth code is empty');
       return 1;
     }
     try {
       const connection = await oauth.complete(flow.id, code);
-      print.ok(`${def.name} 账户已连接：${connection.account}`);
+      print.ok(`${def.name} account connected: ${connection.account}`);
       return 0;
     } catch (err) {
-      print.fail(err.message || '授权失败');
+      print.fail(err.message || 'Authorization failed');
       return 1;
     }
   }
 
-  process.stdout.write(`${COLORS.faint('等待浏览器回调完成授权…（Ctrl+C 取消）')}\n`);
+  process.stdout.write(`${COLORS.faint('Waiting for the browser callback to finish authorization... (Ctrl+C to cancel)')}\n`);
   try {
     const connection = await oauth.wait(flow.id);
     print.blank();
-    print.ok(`${def.name} 账户已连接：${connection.account}`);
-    print.hint('在供应商里启用：dgxay provider edit <名称> --oauth-provider ' + id);
+    print.ok(`${def.name} account connected: ${connection.account}`);
+    print.hint('Enable it on a provider: dgxay provider edit <name> --oauth-provider ' + id);
     return 0;
   } catch (err) {
-    print.fail(err.message || '授权失败');
+    print.fail(err.message || 'Authorization failed');
     return 1;
   }
 }
@@ -154,24 +154,24 @@ async function connect(id, opts) {
 function disconnect(id, opts) {
   const def = oauth.PROVIDERS[id];
   if (!def) {
-    print.fail(`不支持的平台：${id}`);
+    print.fail(`Unsupported platform: ${id}`);
     return 1;
   }
   const current = oauth.listProviders().find((item) => item.id === id);
   if (!current?.connection) {
-    print.warn(`${def.name} 尚未连接`);
+    print.warn(`${def.name} is not connected`);
     return 1;
   }
   oauth.disconnect(id);
-  print.ok(`已断开 ${def.name} 账户（${current.connection.account}）`);
-  print.hint('使用该账户的供应商将无法请求，直到重新连接或改用 API Key');
+  print.ok(`Disconnected ${def.name} account (${current.connection.account})`);
+  print.hint('Providers using this account cannot make requests until you reconnect or switch to an API Key');
   return 0;
 }
 
 function saveClient(id, opts) {
   const def = oauth.PROVIDERS[id];
   if (!def) {
-    print.fail(`不支持的平台：${id}`);
+    print.fail(`Unsupported platform: ${id}`);
     return 1;
   }
   const patch = {};
@@ -181,24 +181,24 @@ function saveClient(id, opts) {
   if (!Object.keys(patch).length) {
     const current = oauth.listProviders().find((item) => item.id === id);
     print.blank();
-    print.heading(`${def.name} OAuth 客户端`);
+    print.heading(`${def.name} OAuth client`);
     print.keyValue([
-      { label: 'Client ID', value: current.clientId ? `${current.clientId.slice(0, 8)}…` : '（空）' },
-      { label: 'Client Secret', value: current.hasSecret ? '已设置' : '未设置' },
-      { label: '授权端点', value: current.authorizeUrl },
-      { label: '令牌端点', value: current.tokenUrl },
-      { label: '权限范围', value: current.scopes },
-      { label: '回调地址', value: current.redirectUri }
+      { label: 'Client ID', value: current.clientId ? `${current.clientId.slice(0, 8)}…` : '(empty)' },
+      { label: 'Client Secret', value: current.hasSecret ? 'set' : 'not set' },
+      { label: 'Authorize endpoint', value: current.authorizeUrl },
+      { label: 'Token endpoint', value: current.tokenUrl },
+      { label: 'Permission scope', value: current.scopes },
+      { label: 'Redirect URI', value: current.redirectUri }
     ]);
     print.blank();
-    print.hint(`修改：dgxay oauth client ${id} --client-id <ID> [--client-secret <Secret>]`);
+    print.hint(`Modify: dgxay oauth client ${id} --client-id <ID> [--client-secret <Secret>]`);
     print.blank();
     return 0;
   }
   try {
     const saved = oauth.saveClient(id, patch);
-    print.ok(`已保存 ${def.name} 的 OAuth 客户端配置`);
-    print.hint(`现在可以连接：dgxay oauth connect ${saved.id}`);
+    print.ok(`Saved OAuth client config for ${def.name}`);
+    print.hint(`You can connect now: dgxay oauth connect ${saved.id}`);
     return 0;
   } catch (err) {
     print.fail(err.message);
@@ -213,33 +213,33 @@ async function run({ argv }) {
 
   if (action === 'list' || action === 'ls') return list();
   if (action === 'connect' || action === 'login') {
-    if (!target) throw Object.assign(new Error('用法：dgxay oauth connect <openai|anthropic|xai|google>'), { userError: true });
+    if (!target) throw Object.assign(new Error('Usage: dgxay oauth connect <openai|anthropic|xai|google>'), { userError: true });
     return connect(target, opts);
   }
   if (action === 'disconnect' || action === 'logout') {
-    if (!target) throw Object.assign(new Error('用法：dgxay oauth disconnect <平台>'), { userError: true });
+    if (!target) throw Object.assign(new Error('Usage: dgxay oauth disconnect <platform>'), { userError: true });
     return disconnect(target, opts);
   }
   if (action === 'client') {
-    if (!target) throw Object.assign(new Error('用法：dgxay oauth client <平台> [--client-id ...]'), { userError: true });
+    if (!target) throw Object.assign(new Error('Usage: dgxay oauth client <platform> [--client-id ...]'), { userError: true });
     return saveClient(target, opts);
   }
-  print.fail(`未知子命令：${action}`);
-  print.hint('可用：list / connect / disconnect / client');
+  print.fail(`Unknown subcommand: ${action}`);
+  print.hint('Available: list / connect / disconnect / client');
   return 1;
 }
 
 module.exports = {
   name: 'oauth',
   aliases: ['account'],
-  summary: 'OAuth 账户连接',
+  summary: 'OAuth account connections',
   usage: 'dgxay oauth <list|connect|disconnect|client>',
   options,
   subcommands: [
-    ['list', '查看各平台连接状态'],
-    ['connect <平台>', '连接（系统浏览器 + PKCE）'],
-    ['disconnect <平台>', '断开并删除本地令牌'],
-    ['client <平台>', '查看 / 修改 OAuth 客户端配置']
+    ['list', 'View connection status per platform'],
+    ['connect <platform>', 'Connect (system browser + PKCE)'],
+    ['disconnect <platform>', 'Disconnect and delete the local token'],
+    ['client <platform>', 'View / modify OAuth client config']
   ],
   examples: ['dgxay oauth list', 'dgxay oauth connect anthropic', 'dgxay oauth client google --client-id xxx.apps.googleusercontent.com'],
   run

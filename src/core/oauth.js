@@ -30,7 +30,7 @@ const PROVIDERS = {
   openai: {
     id: 'openai',
     name: 'OpenAI',
-    subtitle: 'ChatGPT / Codex 账户',
+    subtitle: 'ChatGPT / Codex account',
     authorizeUrl: 'https://auth.openai.com/oauth/authorize',
     tokenUrl: 'https://auth.openai.com/oauth/token',
     clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
@@ -47,13 +47,13 @@ const PROVIDERS = {
     },
     baseUrl: 'https://api.openai.com/v1',
     protocol: 'openai',
-    hint: '使用 ChatGPT 订阅账户。若推理接口拒绝订阅令牌，请为该供应商改用 API Key。',
+    hint: 'Uses your ChatGPT subscription account. If the inference endpoint rejects subscription tokens, use an API key for this provider instead.',
     publicClient: true
   },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic',
-    subtitle: 'Claude 账户',
+    subtitle: 'Claude account',
     authorizeUrl: 'https://claude.ai/oauth/authorize',
     tokenUrl: 'https://console.anthropic.com/v1/oauth/token',
     clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
@@ -65,7 +65,7 @@ const PROVIDERS = {
     extraAuth: { code: 'true' },
     baseUrl: 'https://api.anthropic.com',
     protocol: 'anthropic',
-    hint: '浏览器授权后会显示一段授权码，复制回终端即可完成连接。',
+    hint: 'After approving in the browser you get an authorization code; paste it back into the terminal to finish connecting.',
     publicClient: true
   },
   xai: {
@@ -84,13 +84,13 @@ const PROVIDERS = {
     extraAuth: {},
     baseUrl: 'https://api.x.ai/v1',
     protocol: 'openai',
-    hint: '需要 SuperGrok 或 X Premium+。xAI 可能对 OAuth 推理接口做套餐限制，返回 403 时请改用 API Key。',
+    hint: 'Requires SuperGrok or X Premium+. xAI may restrict OAuth inference by plan; use an API key if you get a 403.',
     publicClient: true
   },
   google: {
     id: 'google',
     name: 'Google',
-    subtitle: 'Gemini API 账户',
+    subtitle: 'Gemini API account',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
     clientId: '',
@@ -104,7 +104,7 @@ const PROVIDERS = {
     userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     protocol: 'openai',
-    hint: '需要先在 Google Cloud Console 创建「桌面应用」OAuth 客户端，并启用 Generative Language API。',
+    hint: 'First create a "Desktop app" OAuth client in Google Cloud Console and enable the Generative Language API.',
     publicClient: false
   }
 };
@@ -168,7 +168,7 @@ function decodeConnection(raw) {
   try {
     if (raw.enc === true) {
       // 桌面版 Electron safeStorage 加密的数据，CLI 无法解密
-      const error = new Error('该令牌由桌面版加密保存，命令行版无法读取。请在桌面版中重新连接，或在本工具中重新授权。');
+      const error = new Error('This token was encrypted by the desktop app and cannot be read by the CLI. Reconnect in the desktop app, or re-authorize in this tool.');
       error.code = 'DESKTOP_ENCRYPTED';
       throw error;
     }
@@ -176,7 +176,7 @@ function decodeConnection(raw) {
       const key = tokenKey();
       if (!key) {
         const error = new Error(
-          '令牌使用 DGXAY_TOKEN_KEY 加密保存，但当前环境没有该变量，无法解密。请设置相同的 DGXAY_TOKEN_KEY 后重试。'
+          'The token is encrypted with DGXAY_TOKEN_KEY, but that variable is missing in this environment, so it cannot be decrypted. Set the same DGXAY_TOKEN_KEY and try again.'
         );
         error.code = 'MISSING_TOKEN_KEY';
         throw error;
@@ -210,7 +210,7 @@ function encodeConnection(connection) {
 
 function clientConfig(id, store = readStore()) {
   const def = PROVIDERS[id];
-  if (!def) throw new Error('不支持的 OAuth 供应商');
+  if (!def) throw new Error('Unsupported OAuth provider');
   const saved = store.clients[id] || {};
   const pick = (key) => {
     const value = saved[key];
@@ -239,7 +239,7 @@ function connectionSummary(id, connection) {
   if (connection.__error) {
     return {
       provider: id,
-      account: '（无法解密）',
+      account: '(cannot decrypt)',
       broken: true,
       error: connection.__error.message,
       expired: true,
@@ -267,7 +267,7 @@ function listProviders() {
       subtitle: def.subtitle,
       hint: def.hint,
       redirectMode: def.redirectMode,
-      redirectUri: config.redirectUri || (def.redirectMode === 'loopback' ? '由系统分配回环端口' : def.redirectUri),
+      redirectUri: config.redirectUri || (def.redirectMode === 'loopback' ? 'Loopback port assigned by the system' : def.redirectUri),
       scopes: config.scopes,
       authorizeUrl: config.authorizeUrl,
       tokenUrl: config.tokenUrl,
@@ -283,7 +283,7 @@ function listProviders() {
 
 function saveClient(id, patch = {}) {
   const def = PROVIDERS[id];
-  if (!def) throw new Error('不支持的 OAuth 供应商');
+  if (!def) throw new Error('Unsupported OAuth provider');
   const store = readStore();
   const current = store.clients[id] || {};
   const next = { ...current };
@@ -301,10 +301,10 @@ function saveClient(id, patch = {}) {
   }
 
   if (next.authorizeUrl && !/^https?:\/\//i.test(next.authorizeUrl)) {
-    throw new Error('授权端点必须以 http:// 或 https:// 开头');
+    throw new Error('The authorization endpoint must start with http:// or https://');
   }
   if (next.tokenUrl && !/^https?:\/\//i.test(next.tokenUrl)) {
-    throw new Error('令牌端点必须以 http:// 或 https:// 开头');
+    throw new Error('The token endpoint must start with http:// or https://');
   }
 
   store.clients[id] = next;
@@ -338,7 +338,7 @@ function accountFromTokens(tokens) {
   const email = claims.email || accessClaims.email || '';
   const name = claims.name || claims.preferred_username || accessClaims.name || '';
   const subject = claims.sub || accessClaims.sub || '';
-  return email || name || (subject ? `账户 ${String(subject).slice(0, 10)}` : '已连接账户');
+  return email || name || (subject ? `Account ${String(subject).slice(0, 10)}` : 'Connected account');
 }
 
 async function fetchAccount(id, tokens) {
@@ -384,7 +384,7 @@ async function requestToken(config, params) {
     }
     if (!res.ok || !data.access_token) {
       const detail = data.error_description || data.error?.message || data.error || text.slice(0, 300);
-      throw new Error(`OAuth 令牌交换失败：HTTP ${res.status}${detail ? ` · ${detail}` : ''}`);
+      throw new Error(`OAuth token exchange failed: HTTP ${res.status}${detail ? ` · ${detail}` : ''}`);
     }
     return data;
   } finally {
@@ -433,11 +433,11 @@ async function getAccessToken(id) {
   const connection = decodeConnection(store.connections[id]);
   if (connection?.__error) throw connection.__error;
   if (!connection?.accessToken) {
-    throw new Error(`尚未连接 ${PROVIDERS[id]?.name || id} 账户，请先运行 dgxay oauth connect ${id}`);
+    throw new Error(`${PROVIDERS[id]?.name || id} account is not connected. Run dgxay oauth connect ${id} first`);
   }
   if (connection.expiresAt && Date.now() > connection.expiresAt - 60_000) {
     if (!connection.refreshToken) {
-      throw new Error(`${PROVIDERS[id].name} 的登录已过期，请重新运行 dgxay oauth connect ${id}`);
+      throw new Error(`The ${PROVIDERS[id].name} login has expired. Run dgxay oauth connect ${id} again`);
     }
     const refreshed = await refreshConnection(id, connection);
     return refreshed.accessToken;
@@ -512,13 +512,13 @@ function startLoopback(flow) {
         `<!doctype html><meta charset="utf-8"><title>DgxayCode</title>` +
           `<body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#f7f7f5;color:#1f2023">` +
           `<div style="text-align:center"><div style="width:44px;height:44px;border-radius:12px;background:#2563eb;display:inline-grid;place-items:center;color:#fff;font-size:22px">✓</div>` +
-          `<h1 style="font-size:18px;margin:16px 0 6px">${ok ? '授权完成' : '授权未完成'}</h1>` +
-          `<p style="font-size:13px;color:#6b6d72;margin:0">${ok ? '可以关闭此页面，回到终端。' : '请回到终端重试。'}</p></div></body>`
+          `<h1 style="font-size:18px;margin:16px 0 6px">${ok ? 'Authorization complete' : 'Authorization incomplete'}</h1>` +
+          `<p style="font-size:13px;color:#6b6d72;margin:0">${ok ? 'You can close this page and return to the terminal.' : 'Please return to the terminal and try again.'}</p></div></body>`
       );
 
       if (!ok) {
         const err = new Error(
-          error ? `授权被拒绝：${error}` : state !== flow.state ? '授权回调 state 不匹配' : '授权回调缺少 code'
+          error ? `Authorization was denied: ${error}` : state !== flow.state ? 'Authorization callback state mismatch' : 'Authorization callback is missing the code'
         );
         failFlow(flow, err);
         return;
@@ -533,9 +533,9 @@ function startLoopback(flow) {
     server.once('error', (err) => {
       const hint =
         err.code === 'EADDRINUSE'
-          ? `端口 ${flow.fixedPort || ''} 已被占用（常见原因：Codex CLI 或其他授权实例正在运行），请关闭后重试。`
+          ? `Port ${flow.fixedPort || ''} is already in use (often Codex CLI or another auth instance is running). Close it and try again.`
           : err.message;
-      reject(new Error(`无法启动本地回调服务：${hint}`));
+      reject(new Error(`Cannot start the local callback server: ${hint}`));
     });
     const port = flow.fixedPort || 0;
     const host = flow.fixedPort ? 'localhost' : '127.0.0.1';
@@ -554,17 +554,17 @@ function startLoopback(flow) {
 async function begin(input = {}) {
   const id = String(input.provider || '');
   const def = PROVIDERS[id];
-  if (!def) throw new Error('不支持的 OAuth 供应商');
+  if (!def) throw new Error('Unsupported OAuth provider');
 
   const store = readStore();
   const config = clientConfig(id, store);
-  if (!config.clientId) throw new Error(`请先填写该平台的 OAuth Client ID：dgxay oauth client ${id} --client-id <ID>`);
+  if (!config.clientId) throw new Error(`Set this platform's OAuth Client ID first: dgxay oauth client ${id} --client-id <ID>`);
 
   for (const [label, url] of [
-    ['授权端点', config.authorizeUrl],
-    ['令牌端点', config.tokenUrl]
+    ['Authorization endpoint', config.authorizeUrl],
+    ['Token endpoint', config.tokenUrl]
   ]) {
-    if (!/^https?:\/\//i.test(url || '')) throw new Error(`${label}必须是 http:// 或 https:// 地址`);
+    if (!/^https?:\/\//i.test(url || '')) throw new Error(`${label} must be an http:// or https:// URL`);
   }
 
   const verifier = base64url(crypto.randomBytes(32));
@@ -621,7 +621,7 @@ async function begin(input = {}) {
 
   flows.set(flowId, flow);
   flow.timer = setTimeout(() => {
-    failFlow(flow, new Error('授权等待超时，请重新发起连接'));
+    failFlow(flow, new Error('Authorization timed out, please start the connection again'));
   }, FLOW_TIMEOUT);
 
   const opened = await openBrowser(authUrl.toString());
@@ -639,9 +639,9 @@ async function begin(input = {}) {
 
 async function finalizeFlow(flow, rawCode, state) {
   if (!flow || flow.settled) return null;
-  if (state && flow.state && state !== flow.state) throw new Error('授权回调 state 不匹配，已中止');
+  if (state && flow.state && state !== flow.state) throw new Error('Authorization callback state mismatch, aborted');
   const code = String(rawCode || '').trim();
-  if (!code) throw new Error('授权码为空');
+  if (!code) throw new Error('The authorization code is empty');
 
   const params = {
     grant_type: 'authorization_code',
@@ -689,13 +689,13 @@ function failFlow(flow, error) {
 
 function wait(id) {
   const flow = flows.get(String(id));
-  if (!flow) throw new Error('授权会话不存在或已结束，请重新发起连接');
+  if (!flow) throw new Error('The authorization session does not exist or has ended. Start the connection again');
   return flow.promise;
 }
 
 async function complete(id, rawInput) {
   const flow = flows.get(String(id));
-  if (!flow) throw new Error('授权会话不存在或已结束，请重新发起连接');
+  if (!flow) throw new Error('The authorization session does not exist or has ended. Start the connection again');
   let code = String(rawInput || '').trim();
   let state = '';
   if (code.includes('#')) {
@@ -711,14 +711,14 @@ async function complete(id, rawInput) {
       /* keep raw */
     }
   }
-  if (!code) throw new Error('没有识别到授权码，请重新复制');
+  if (!code) throw new Error('No authorization code recognized. Copy it again');
   return finalizeFlow(flow, code, state);
 }
 
 function cancel(id) {
   const flow = flows.get(String(id));
   if (!flow) return false;
-  failFlow(flow, new Error('已取消授权'));
+  failFlow(flow, new Error('Authorization cancelled'));
   return true;
 }
 

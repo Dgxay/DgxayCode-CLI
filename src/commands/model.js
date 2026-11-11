@@ -18,26 +18,26 @@ const sessions = require('../core/sessions');
 const { askSecret } = require('../services/input');
 
 const options = [
-  { name: 'provider', alias: 'p', type: 'string', valueName: 'name', desc: '指定供应商（默认当前供应商）' },
-  { name: 'name', type: 'string', valueName: 'text', desc: '显示名称' },
-  { name: 'context-window', type: 'number', valueName: 'n', desc: '上下文窗口' },
-  { name: 'base-url', type: 'string', valueName: 'url', desc: '拉取列表时使用该地址' },
-  { name: 'api-key', type: 'string', valueName: 'key', desc: '拉取列表时使用该密钥' },
-  { name: 'add', type: 'list', valueName: 'id', desc: '拉取后把指定模型加入供应商' }
+  { name: 'provider', alias: 'p', type: 'string', valueName: 'name', desc: 'Target provider (default: active provider)' },
+  { name: 'name', type: 'string', valueName: 'text', desc: 'Display name' },
+  { name: 'context-window', type: 'number', valueName: 'n', desc: 'Context window' },
+  { name: 'base-url', type: 'string', valueName: 'url', desc: 'Use this base URL when fetching the list' },
+  { name: 'api-key', type: 'string', valueName: 'key', desc: 'Use this key when fetching the list' },
+  { name: 'add', type: 'list', valueName: 'id', desc: 'Add the given models to the provider after fetching' }
 ];
 
 function list(providerRef) {
   const config = settings.readConfig();
   const provider = providerRef ? settings.findProvider(providerRef) : settings.activeProvider(config);
   if (!provider) {
-    print.warn('还没有供应商，运行 dgxay config init');
+    print.warn('No providers yet, run dgxay config init');
     return 1;
   }
   const models = provider.models || [];
   print.blank();
-  print.heading(`${provider.name} 的模型（${models.length}）`);
+  print.heading(`Models for ${provider.name} (${models.length})`);
   if (!models.length) {
-    print.hint('  还没有模型，运行 dgxay model add <id>');
+    print.hint('  No models yet, run dgxay model add <id>');
     print.blank();
     return 0;
   }
@@ -47,16 +47,16 @@ function list(providerRef) {
     model.id === active ? COLORS.accent('❯') : ' ',
     model.name || model.id,
     model.id,
-    model.contextWindow ? sessions.formatTokens(model.contextWindow) : COLORS.faint('按协议默认'),
-    provider.reviewModelId === model.id ? '审查' : ''
+    model.contextWindow ? sessions.formatTokens(model.contextWindow) : COLORS.faint('protocol default'),
+    provider.reviewModelId === model.id ? 'review' : ''
   ]);
   print.table(
     [
       { title: '#', max: 3 },
       { title: '', max: 1 },
-      { title: '名称', max: 26 },
+      { title: 'Name', max: 26 },
       { title: 'ID', max: 32 },
-      { title: '上下文', max: 10 },
+      { title: 'Context', max: 10 },
       { title: '', max: 4 }
     ],
     rows
@@ -73,7 +73,7 @@ async function fetchList(opts) {
     const secret = await askSecret('API Key: ');
     apiKey = secret || '';
   }
-  process.stdout.write(`${COLORS.faint('正在拉取模型列表…')}`);
+  process.stdout.write(`${COLORS.faint('Fetching model list...')}`);
   try {
     let models;
     if (opts.baseUrl) {
@@ -83,22 +83,22 @@ async function fetchList(opts) {
         protocol: opts.protocol || provider?.protocol || 'openai'
       });
     } else {
-      if (!provider) throw new Error('没有可用的供应商');
+      if (!provider) throw new Error('No provider available');
       models = await settings.fetchModels({ providerRef: provider.id, apiKey });
     }
     process.stdout.write('\r\x1b[2K');
-    print.ok(`拉到 ${models.length} 个模型`);
+    print.ok(`Fetched ${models.length} model(s)`);
     const existing = new Set((provider?.models || []).map((m) => m.id));
     for (const id of models) {
       print.write(`  ${existing.has(id) ? COLORS.green('✓') : ' '} ${id}`);
     }
     print.blank();
-    print.hint('用 dgxay model add <id> 加入供应商；拉取失败时也可以直接手动填写模型 ID');
+    print.hint('Use dgxay model add <id> to add to the provider; if fetching fails you can type the model ID manually');
     return 0;
   } catch (err) {
     process.stdout.write('\r\x1b[2K');
-    print.fail(`拉取失败：${err.message}`);
-    print.hint('部分网关不支持 /models 接口，可以直接用 dgxay model add <id> 手动添加');
+    print.fail(`Fetch failed: ${err.message}`);
+    print.hint('Some gateways do not support the /models endpoint; add models manually with dgxay model add <id>');
     return 1;
   }
 }
@@ -107,12 +107,12 @@ function addModel(id, opts) {
   const config = settings.readConfig();
   const provider = opts.provider ? settings.findProvider(opts.provider) : settings.activeProvider(config);
   if (!provider) {
-    print.warn('还没有供应商，运行 dgxay config init');
+    print.warn('No providers yet, run dgxay config init');
     return 1;
   }
   const models = (provider.models || []).slice();
   if (models.some((m) => m.id === id)) {
-    print.warn(`模型 ${id} 已存在`);
+    print.warn(`Model ${id} already exists`);
     return 1;
   }
   models.push({
@@ -124,7 +124,7 @@ function addModel(id, opts) {
   const patch = { providers: next };
   if (provider.id === config.activeProviderId && !config.activeModelId) patch.activeModelId = id;
   settings.saveConfig(patch);
-  print.ok(`已添加模型 ${id}`);
+  print.ok(`Model added: ${id}`);
   return 0;
 }
 
@@ -132,16 +132,16 @@ function removeModel(id, opts) {
   const config = settings.readConfig();
   const provider = opts.provider ? settings.findProvider(opts.provider) : settings.activeProvider(config);
   if (!provider) {
-    print.warn('还没有供应商');
+    print.warn('No providers yet');
     return 1;
   }
   const models = (provider.models || []).filter((m) => m.id !== id);
   if (models.length === (provider.models || []).length) {
-    print.fail(`供应商 ${provider.name} 下没有模型 ${id}`);
+    print.fail(`Provider ${provider.name} has no model ${id}`);
     return 1;
   }
   if (!models.length) {
-    print.fail('不能删除最后一个模型，请先添加其他模型');
+    print.fail('Cannot delete the last model; add another model first');
     return 1;
   }
   const reviewModelId = models.some((m) => m.id === provider.reviewModelId)
@@ -153,7 +153,7 @@ function removeModel(id, opts) {
   const patch = { providers: next };
   if (config.activeModelId === id) patch.activeModelId = models[0].id;
   settings.saveConfig(patch);
-  print.ok(`已删除模型 ${id}`);
+  print.ok(`Model deleted: ${id}`);
   return 0;
 }
 
@@ -161,7 +161,7 @@ function useModel(ref, opts) {
   const config = settings.readConfig();
   const provider = opts.provider ? settings.findProvider(opts.provider) : settings.activeProvider(config);
   if (!provider) {
-    print.warn('还没有供应商');
+    print.warn('No providers yet');
     return 1;
   }
   const models = provider.models || [];
@@ -171,11 +171,11 @@ function useModel(ref, opts) {
     models.find((m) => m.id === ref) ||
     models.find((m) => m.id.includes(ref));
   if (!target) {
-    print.fail(`找不到模型：${ref}`);
+    print.fail(`Model not found: ${ref}`);
     return 1;
   }
   settings.setActiveModel(provider.id, target.id);
-  print.ok(`当前模型：${target.name || target.id}（${provider.name}）`);
+  print.ok(`Active model: ${target.name || target.id} (${provider.name})`);
   return 0;
 }
 
@@ -185,17 +185,17 @@ async function run({ argv }) {
 
   // model add deepseek-chat gpt-4o 支持多个
   if (action === 'add') {
-    if (!rest.length) throw Object.assign(new Error('用法：dgxay model add <id> [<id>…]'), { userError: true });
+    if (!rest.length) throw Object.assign(new Error('Usage: dgxay model add <id> [<id>...]'), { userError: true });
     let code = 0;
     for (const id of rest) code = Math.max(code, addModel(id, opts));
     return code;
   }
   if (action === 'rm' || action === 'remove' || action === 'delete') {
-    if (!rest[0]) throw Object.assign(new Error('用法：dgxay model rm <id>'), { userError: true });
+    if (!rest[0]) throw Object.assign(new Error('Usage: dgxay model rm <id>'), { userError: true });
     return removeModel(rest[0], opts);
   }
   if (action === 'use' || action === 'set') {
-    if (!rest[0]) throw Object.assign(new Error('用法：dgxay model use <id|序号>'), { userError: true });
+    if (!rest[0]) throw Object.assign(new Error('Usage: dgxay model use <id|index>'), { userError: true });
     return useModel(rest[0], opts);
   }
   if (action === 'fetch' || action === 'ls-remote') return fetchList(opts);
@@ -208,15 +208,15 @@ async function run({ argv }) {
 module.exports = {
   name: 'model',
   aliases: ['models'],
-  summary: '模型管理：列表、切换、增删、拉取',
+  summary: 'Model management: list, switch, add/remove, fetch',
   usage: 'dgxay model <list|use|add|rm|fetch>',
   options,
   subcommands: [
-    ['list', '列出模型'],
-    ['use <id|序号>', '切换当前模型'],
-    ['add <id>', '添加模型'],
-    ['rm <id>', '删除模型'],
-    ['fetch', '从供应商接口拉取模型列表']
+    ['list', 'List models'],
+    ['use <id|index>', 'Switch the active model'],
+    ['add <id>', 'Add a model'],
+    ['rm <id>', 'Delete a model'],
+    ['fetch', 'Fetch the model list from the provider API']
   ],
   examples: ['dgxay model list', 'dgxay model use 2', 'dgxay model add gpt-4o --name GPT-4o', 'dgxay model fetch'],
   run

@@ -32,6 +32,7 @@ const {
   summarizeArgs
 } = require('./prompt');
 const { trimHistory } = require('./sessions');
+const { t } = require('../cli/i18n');
 
 const HISTORY_LIMIT = 24;
 const MAX_STEPS_CHAT = 8;
@@ -43,16 +44,16 @@ const VALID_PERMISSIONS = ['none', 'normal', 'auto', 'full'];
 function describeOperation({ kind, name, args, command }) {
   const lines = [];
   if (kind === 'terminal') {
-    lines.push(`命令：${command || ''}`);
+    lines.push(`Command: ${command || ''}`);
     return lines.join('\n');
   }
-  lines.push(`工具：${name}`);
-  if (args?.path) lines.push(`路径：${args.path}`);
-  if (args?.url) lines.push(`地址：${args.url}`);
-  if (args?.command) lines.push(`命令：${args.command}`);
-  if (args?.name) lines.push(`名称：${args.name}`);
+  lines.push(`Tool: ${name}`);
+  if (args?.path) lines.push(`Path: ${args.path}`);
+  if (args?.url) lines.push(`URL: ${args.url}`);
+  if (args?.command) lines.push(`Command: ${args.command}`);
+  if (args?.name) lines.push(`Name: ${args.name}`);
   const body = summarizeArgs(args);
-  if (body && body !== '{}') lines.push(`参数：${body}`);
+  if (body && body !== '{}') lines.push(`Arguments: ${body}`);
   return lines.join('\n');
 }
 
@@ -82,7 +83,7 @@ function resolvePermissions(config) {
 async function requestOperationApproval({ config, permission, kind, name, args, command, workspace, providerId, toolId, askUser, emit }) {
   if (permission === 'full') return { allow: true, source: 'full', review: null };
   if (permission !== 'normal' && permission !== 'auto') {
-    return { allow: false, source: 'none', review: null, reason: '当前权限禁止该操作' };
+    return { allow: false, source: 'none', review: null, reason: 'Current permission level forbids this operation' };
   }
 
   if (permission === 'normal') {
@@ -90,7 +91,7 @@ async function requestOperationApproval({ config, permission, kind, name, args, 
     const allowed = await askUser({
       kind,
       permission,
-      title: kind === 'terminal' ? 'AI 请求执行终端命令' : 'AI 请求执行操作',
+      title: kind === 'terminal' ? t('approval_terminal') : t('approval_tool'),
       operation: name,
       detail: describeOperation({ kind, name, args, command }),
       command: command || '',
@@ -99,7 +100,7 @@ async function requestOperationApproval({ config, permission, kind, name, args, 
       reviewer: '',
       reviewModel: ''
     });
-    return { allow: Boolean(allowed), source: 'user', review: null, reason: allowed ? '' : '用户拒绝了该操作' };
+    return { allow: Boolean(allowed), source: 'user', review: null, reason: allowed ? '' : 'The user declined this operation' };
   }
 
   emit?.({ type: 'review-start', toolId, name, kind });
@@ -128,7 +129,7 @@ async function requestOperationApproval({ config, permission, kind, name, args, 
   const allowed = await askUser({
     kind,
     permission,
-    title: kind === 'terminal' ? 'AI 请求执行终端命令' : 'AI 请求执行操作',
+    title: kind === 'terminal' ? t('approval_terminal') : t('approval_tool'),
     operation: name,
     detail: describeOperation({ kind, name, args, command }),
     command: command || '',
@@ -137,7 +138,7 @@ async function requestOperationApproval({ config, permission, kind, name, args, 
     reviewer: review.reviewer,
     reviewModel: review.modelId
   });
-  return { allow: Boolean(allowed), source: 'user', review, reason: allowed ? '' : '用户拒绝了该操作' };
+  return { allow: Boolean(allowed), source: 'user', review, reason: allowed ? '' : 'The user declined this operation' };
 }
 
 function providerOf(config, providerId) {
@@ -197,12 +198,12 @@ async function runAgent({
 }) {
   const resolvedMode = mode === 'work' ? 'work' : 'chat';
   if (!Array.isArray(messages) || !messages.length) {
-    throw Object.assign(new Error('消息不能为空：请提供至少一条用户消息'), { userError: true });
+    throw Object.assign(new Error('No messages: at least one user message is required'), { userError: true });
   }
   const provider = providerOf(config, providerId);
-  if (!provider) throw new Error('未找到对应的供应商，请先运行 dgxay provider add');
+  if (!provider) throw new Error('Provider not found. Run dgxay provider add first');
   const targetModel = modelOf(provider, modelId, config);
-  if (!targetModel) throw new Error('该供应商下没有可用模型，请先添加模型');
+  if (!targetModel) throw new Error('This provider has no models. Add one first');
 
   const effectivePermission = VALID_PERMISSIONS.includes(permission) ? permission : resolvePermissions(config);
   const activeWorkspace = normalizeWorkspace(workspace || config.work?.workspace || '');
@@ -251,7 +252,7 @@ async function runAgent({
     let continuationCount = 0;
 
     for (let step = 0; step < maxSteps; step += 1) {
-      emit({ type: 'status', text: step === 0 ? '正在生成' : '正在继续处理' });
+      emit({ type: 'status', text: step === 0 ? 'Working' : 'Continuing' });
       const result = await streamChat({
         protocol: provider.protocol || 'openai',
         baseUrl: provider.baseUrl,
@@ -372,13 +373,13 @@ async function runAgent({
         apiMessages.push({
           role: 'user',
           content:
-            '继续执行，直到任务全部完成。不要只描述计划或承诺下一步，直接调用工具完成剩余步骤；完成后先验证结果，再给出简短总结。'
+            'Continue until the task is fully done. Do not describe a plan or promise a next step — call the tools to finish the remaining work, verify the result, then give a short summary.'
         });
         if (finalText) {
           finalText += '\n\n';
           emit({ type: 'delta', text: '\n\n' });
         }
-        emit({ type: 'status', text: '正在继续完成任务' });
+        emit({ type: 'status', text: 'Continuing the task' });
         continue;
       }
 

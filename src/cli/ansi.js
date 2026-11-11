@@ -87,23 +87,49 @@ function isInteractive() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-function termWidth() {
-  const width = Number(process.stdout.columns) || 0;
+function termWidth(stream = process.stdout) {
+  const width = Number(stream.columns) || 0;
   if (width > 0) return Math.max(20, width);
   return 80;
 }
 
-function useUnicode() {
+/**
+ * 终端能否安全输出 Unicode 框线字符。
+ * Windows Terminal / VSCode / 现代 shell 都支持；只有老的 conhost 需要降级成 ASCII。
+ */
+function useUnicode(stream = process.stdout) {
   if (process.env.DGXAY_ASCII === '1') return false;
-  if (process.platform === 'win32') {
-    const cp = process.stdout.isTTY ? 65001 : 0;
-    return cp === 65001 || Number(process.stdout.columns) > 0;
-  }
-  return true;
+  if (process.platform !== 'win32') return true;
+  if (process.env.WT_SESSION || process.env.TERM_PROGRAM || process.env.ConEmuANSI) return true;
+  if (/UTF-?8/i.test(process.env.LANG || process.env.LC_ALL || '')) return true;
+  // 能拿到列数说明是真实交互终端；Windows 10+ 的 PowerShell 用 Consolas 渲染框线没有问题
+  return Boolean(stream.columns);
 }
 
 function clearLine() {
   if (process.stdout.isTTY) process.stdout.write('\r\x1b[2K');
+}
+
+/* --- 光标与屏幕控制（供输入框 / 区域重绘使用） --- */
+
+/** 上移 n 行（n <= 0 时返回空串） */
+function cursorUp(n = 1) {
+  return n > 0 ? `\x1b[${n}A` : '';
+}
+
+/** 下移 n 行 */
+function cursorDown(n = 1) {
+  return n > 0 ? `\x1b[${n}B` : '';
+}
+
+/** 清整行（光标不动） */
+function eraseLine() {
+  return '\x1b[2K';
+}
+
+/** 清屏并把光标移到左上角 */
+function clearScreen(stream = process.stdout) {
+  stream.write('\x1b[2J\x1b[H');
 }
 
 function hideCursor() {
@@ -493,6 +519,10 @@ module.exports = {
   termWidth,
   useUnicode,
   clearLine,
+  eraseLine,
+  clearScreen,
+  cursorUp,
+  cursorDown,
   hideCursor,
   showCursor,
   stripAnsi,
